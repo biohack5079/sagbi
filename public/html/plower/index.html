@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ローカル情報を掘り起こすAIショベル「プラウアー」。</title>
+    <link rel="stylesheet" href="style.css"> 
+    <script src='https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'></script>
+    <style>
+        h1 {
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>ローカル情報を掘り起こすAIショベル「プラウアー」。</h1>
+    <div class="rag-controls-header">
+        <label for="fileInput">RAGソース (フォルダ/ファイル):</label>
+        <input type="file" id="fileInput" multiple>
+        <button id="syncFolderButton">ローカルフォルダ同期 (File System API)</button>
+        <button id="resetDocsButton">RAGソースをリセット (LocalStore全削除)</button>
+    </div>
+
+    <div class="rag-source-container">
+        <div id="fileList">
+            <h3>RAGソースファイル一覧 (永続化/アップロード)</h3>
+            <ul id="fileListUl">
+            </ul>
+        </div>
+        
+        <div id="fileContent">【ここに読み込まれた文書のプレビューまたは選択内容が表示されます】</div>
+    </div>
+    <hr>
+
+    <label for="pasteArea">一時的なRAGコンテキストとしてテキストまたは画像を貼り付け:</label>
+    <textarea id="pasteArea" placeholder="ここにテキストを貼り付けてください。Ctrl+Vで画像を貼り付けるとOCR処理が開始されます。"></textarea>
+
+    <button id="saveOcrButton">OCR/貼付テキストを永続ファイルとして保存</button>
+    <hr>
+
+    <label for="userInput">質問を入力:</label>
+    <textarea id="userInput" placeholder="質問を入力してください..."></textarea>
+    
+    <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
+        <label for="geminiApiKey">Gemini API Key (クラウド利用時のみ):</label>
+        <input type="password" id="geminiApiKey" placeholder="AIzaSy..." style="width: 300px;">
+        <button id="saveKeyButton">キーをブラウザに保存</button>
+    </div>
+
+    <label for="modelSelect">モデル選択:</label>
+    <select id="modelSelect">
+        <option value="gemma:7b">Gemma 7B (Ollama)</option>
+        <option value="gpt-oss:20b">GPT-OSS 20B (Ollama)</option>
+        <option value="gemma3:12b">Gemma 12B (Ollama)</option>
+        <option value="gpt-oss:120b">GPT-OSS 120B (Ollama)</option>
+
+        <option value="sarasina">Sarasina (SoftBank/Ollama)</option>
+        <option value="gemini-flash" selected>Gemini API Flash (クラウド)</option>
+        <option value="gemini-pro">Gemini API Pro (クラウド)</option>
+    </select>
+    
+    <button id="sendButton">送信</button>
+    
+    <div id="chatLog"></div>
+
+    <script>
+        if (!navigator.language.startsWith('ja')) {
+            const t = {
+                title: 'AI Shovel "Plower" digging up local information.',
+                ragSource: 'RAG Source (Folder/File):',
+                sync: 'Sync Local Folder (File System API)',
+                reset: 'Reset RAG Source (Clear LocalStore)',
+                listHeader: 'RAG Source Files (Persisted/Uploaded)',
+                preview: '[Preview of loaded document or selection will appear here]',
+                pasteLabel: 'Paste text or image as temporary RAG context:',
+                pastePlaceholder: 'Paste text here. Ctrl+V to paste image triggers OCR.',
+                saveOcr: 'Save OCR/Pasted Text as Persistent File',
+                inputLabel: 'Enter Question:',
+                inputPlaceholder: 'Please enter your question...',
+                keyLabel: 'Gemini API Key (Cloud only):',
+                saveKey: 'Save Key to Browser',
+                modelLabel: 'Select Model:',
+                send: 'Send',
+                cloud: '(Cloud)'
+            };
+
+            document.title = t.title;
+            document.querySelector('h1').textContent = t.title;
+            document.querySelector('label[for="fileInput"]').textContent = t.ragSource;
+            document.getElementById('syncFolderButton').textContent = t.sync;
+            document.getElementById('resetDocsButton').textContent = t.reset;
+            document.querySelector('#fileList h3').textContent = t.listHeader;
+            document.getElementById('fileContent').textContent = t.preview;
+            document.querySelector('label[for="pasteArea"]').textContent = t.pasteLabel;
+            document.getElementById('pasteArea').placeholder = t.pastePlaceholder;
+            document.getElementById('saveOcrButton').textContent = t.saveOcr;
+            document.querySelector('label[for="userInput"]').textContent = t.inputLabel;
+            document.getElementById('userInput').placeholder = t.inputPlaceholder;
+            document.querySelector('label[for="geminiApiKey"]').textContent = t.keyLabel;
+            document.getElementById('saveKeyButton').textContent = t.saveKey;
+            document.querySelector('label[for="modelSelect"]').textContent = t.modelLabel;
+            document.getElementById('sendButton').textContent = t.send;
+            
+            const select = document.getElementById('modelSelect');
+            for(let opt of select.options) {
+                if(opt.text.includes('(クラウド)')) {
+                    opt.text = opt.text.replace('(クラウド)', t.cloud);
+                }
+            }
+            document.documentElement.lang = 'en';
+        }
+    </script>
+    <script src="script.js"></script>
+</body>
+</html>

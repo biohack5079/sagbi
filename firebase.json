@@ -1,10 +1,21 @@
+
 {
   "hosting": {
-    "public": "public",
+    "public": "public/html",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ]
+  },
+  "emulators": {
+    "hosting": {
+      "port": 5000
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    }
   }
 }
+
