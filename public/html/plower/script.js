@@ -930,6 +930,13 @@ ${userInput}`;
                     ? `Model '${modelSelect}' not found on the Ollama server (Space). The Space needs to pull this model first.` 
                     : `Ollamaサーバー(Space)上にモデル '${modelSelect}' が見つかりません。Space側でこのモデルをダウンロード(pull)する必要があります。`);
             }
+            
+            // 403 Forbidden の場合 (CORS/Origin設定ミス)
+            if (response.status === 403) {
+                throw new Error(isEn 
+                    ? `Access Forbidden (403). The Ollama server rejected the request. Check if 'OLLAMA_ORIGINS' in Dockerfile is set to '*' (without quotes).`
+                    : `アクセスが拒否されました (403)。Ollamaサーバーがリクエストを拒否しました。Dockerfileの 'OLLAMA_ORIGINS' が '*' (引用符なし) に設定されているか確認してください。`);
+            }
 
             let errorSource = 'Ollamaサーバー';
             if (isGeminiCloudModel) errorSource = 'FastAPIプロキシ/Gemini API';
