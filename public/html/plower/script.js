@@ -146,7 +146,8 @@ function showDocumentContent(index) {
     const fileContentDiv = document.getElementById('fileContent');
     const doc = persistentDocuments[index];
     if (doc) {
-        // 選択されたファイルの全文表示
+        // 選択されたファイルの全文
+        // 表示
         fileContentDiv.innerHTML = `<h3>${isEn ? 'Selected File' : '選択中のファイル'}: ${doc.name}</h3><pre>${doc.content}</pre>`;
     }
 }
@@ -655,147 +656,30 @@ function saveOcrTextAsFile() {
 }
 
 
-// --- 関連文書検索ロジック (キーワードマッチング) ---
-function findRelevantDocs(query, docs, topK = 3) {
-    if (!docs || docs.length === 0) return [];
-    
-    // 💡 RAG検索ロジックを改善: 記号を除去し、日本語の1文字単語（漢字など）を許容
-    const cleanQuery = query.toLowerCase()
-        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()？。、！「」【】]/g, " "); 
-
-    const searchTerms = cleanQuery.split(/\s+/)
-        .filter(t => t.trim().length > 0)
-        .filter(t => {
-            // 英数字のみの場合は2文字以上、それ以外（日本語など）は1文字以上を許容
-            return /^[a-z0-9]+$/.test(t) ? t.length > 1 : true;
-        });
-
-    // 元のクエリそのものも検索語に追加
-    if (query.trim()) {
-        searchTerms.push(query.toLowerCase());
-    }
-    
-    // 重複除去
-    const uniqueTerms = [...new Set(searchTerms)];
-
-    const scores = docs.map(doc => {
-        const content = (doc.content || '').toLowerCase();
-        let score = 0;
-        
-        uniqueTerms.forEach(term => {
-            try {
-                // 正規表現の特殊文字をエスケープ
-                const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const count = (content.match(new RegExp(escapedTerm, 'g')) || []).length; 
-                score += count * term.length; 
-            } catch (e) {
-                console.warn("Regex error:", e);
-            }
-        });
-        return { ...doc, score };
-    });
-    
-    // スコアが0より大きい文書をソートして返す
-    return scores.filter(doc => doc.score > 0).sort((a, b) => b.score - a.score).slice(0, topK);
-}
-
-// --- モデル送信ロジック (Ollama/Gemini 切り替え) ---
-async function sendToModel() {
-    const userInputElement = document.getElementById('userInput');
-    const userInput = userInputElement.value.trim();
-    const pasteAreaContent = document.getElementById('pasteArea').value.trim();
-    const chatLog = document.getElementById('chatLog');
-    const sendButton = document.getElementById('sendButton');
-    const modelSelect = document.getElementById('modelSelect').value; 
-    const apiKey = document.getElementById('geminiApiKey').value.trim();
-
-    if (!userInput) {
-        alert(isEn ? "Please enter a question." : "質問を入力してください。");
-        return;
-    }
-    
-    sendButton.disabled = true;
-    sendButton.textContent = isEn ? 'Sending...' : '送信中...';
-    chatLog.innerHTML += `<p><strong>${isEn ? 'Question' : '質問'}:</strong> ${userInput}</p>`;
-    const responseParagraph = document.createElement('p');
-    responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> (${isEn ? 'Waiting for response...' : '応答待機中...'})`;
-    chatLog.appendChild(responseParagraph);
-    
-    // 全てのRAGソースを統合
-    let allDocuments = [...persistentDocuments, ...ocrDocuments];
-    if (pasteAreaContent) {
-        // 貼り付けエリアのテキストは一時文書として扱う
-        allDocuments.push({ name: '貼付けテキスト(一時)', content: pasteAreaContent });
-    }
-
-    // RAGコンテキストの生成
-    let relevantDocs = findRelevantDocs(userInput, allDocuments);
-
-    // 検索でヒットしない場合、フォールバックとして最新の文書を使用する
-    if (relevantDocs.length === 0 && allDocuments.length > 0) {
-        console.log("キーワード検索でヒットしませんでした。最新の文書をフォールバックとして使用します。");
-        // 最新のものを優先（配列の最後が最新）
-        relevantDocs = allDocuments.slice().reverse().slice(0, 5);
-    }
-
-    console.log(`RAG検索結果: ${relevantDocs.length}件の関連文書が見つかりました。`, relevantDocs); // デバッグ用
-    const context = relevantDocs.map(doc => `【${doc.name}】\n${doc.content}`).join('\n\n').slice(0, 5000); // 5000文字に制限
-    
-    // プロンプトの生成 (Sarasinaなど小規模モデルでも認識しやすい形式に調整)
-    const prompt = isEn 
-        ? `You are an assistant answering based on the provided documents.
-Answer the question in English using only the content from the [Reference Documents] below.
-If the answer is not contained in the documents, state "I cannot answer as there is no relevant information in the provided documents."
-
-[Reference Documents]
-${context}
-
-[Question]
-${userInput}`
-        : `あなたは提供された文書に基づいて回答するアシスタントです。
-以下の【参照文書】の内容のみを使用して、質問に日本語で答えてください。
-文書に答えが含まれていない場合は、「提供された文書に関連情報がないため回答できません。」と答えてください。
-
-【参照文書】
-${context}
-
-【質問】
-${userInput}`;
-
+// --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
+async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
     let result = '';
     let endpoint = '';
     let bodyData = {};
     let isStreaming = false;
     
-    // --- モデルの振り分けロジック ---
     const isGeminiCloudModel = modelSelect.toLowerCase().startsWith('gemini');
     const isSarasinaModel = modelSelect.toLowerCase().includes('sarasina');
     
     if (isGeminiCloudModel) {
-        // --- Gemini Cloud Model (直接Google APIへ送信) ---
-        
-        // APIキーのチェック (入力欄の値を使用)
-        if (!apiKey) {
-            alert("Geminiモデルを使用するにはAPIキーが必要です。入力欄に設定してください。");
-            sendButton.disabled = false;
-            sendButton.textContent = '送信';
-            return;
-        }
+        // --- Gemini Cloud Model ---
+        if (!apiKey) throw new Error("Gemini API Key is required.");
 
-        // モデル候補の定義: 最新(2.0/3系相当) -> 安定版(1.5) の順にフォールバック
         let candidates = [];
         if (modelSelect.includes('flash')) {
-            // ユーザー指定の2.5系/Liteに加え、2.0 Experimental、安定版1.5系(001/002)を網羅的に試行
             candidates = ['gemini-2.5-flash', 'gemini-flash-lite', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-flash-002', 'gemini-1.5-flash-001'];
         } else {
-            // Proの場合: 最新のExperimental -> 1.5 Pro
             candidates = ['gemini-2.5-pro', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-pro', 'gemini-1.5-pro-002', 'gemini-1.5-pro-001'];
         }
 
         let success = false;
         let lastError = null;
 
-        // 候補順にAPIを試行
         for (const modelVersion of candidates) {
             try {
                 console.log(`Trying Gemini model: ${modelVersion}`);
@@ -813,32 +697,24 @@ ${userInput}`;
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    // 404(Not Found)や503(Service Unavailable)なら次を試す
                     if (response.status === 404 || response.status === 503) {
-                        console.warn(`Model ${modelVersion} failed (${response.status}). Trying fallback...`);
                         lastError = new Error(`Gemini API Error (${response.status}): ${errorText}`);
                         continue;
                     }
-                    
-                    // 認証エラーなどの場合、キーを削除して再入力を促す
                     if (response.status === 400 || response.status === 403) {
                         localStorage.removeItem('plowerGeminiApiKey');
-                        alert(`APIキーが無効か、権限がありません (Status: ${response.status})。\n保存されたキーを削除しました。再度送信して新しいキーを入力してください。`);
                         throw new Error(`Gemini API Auth Error (${response.status}): ${errorText}`);
                     }
-
                     throw new Error(`Gemini API Error (${response.status}): ${errorText}`);
                 }
 
-                // 成功したらループを抜けて後続処理へ
                 const json = await response.json();
-                // レスポンス形式の正規化（後続の処理に合わせる）
                 if (json.candidates && json.candidates[0].content) {
                     result = json.candidates[0].content.parts.map(p => p.text).join('');
                     success = true;
                     break; 
                 } else {
-                    throw new Error(`Unexpected response format from ${modelVersion}: ${JSON.stringify(json)}`);
+                    throw new Error(`Unexpected response format from ${modelVersion}`);
                 }
             } catch (e) {
                 lastError = e;
@@ -846,164 +722,155 @@ ${userInput}`;
             }
         }
 
-        if (!success) {
-            responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${lastError ? lastError.message : 'All candidates failed.'}`;
-            sendButton.disabled = false;
-            sendButton.textContent = isEn ? 'Send' : '送信';
-            return;
-        }
+        if (!success) throw lastError || new Error('All Gemini candidates failed.');
+        if (onChunk) onChunk(result);
+        return result;
 
-        // 結果表示して終了（Ollama用の共通処理はスキップ）
-        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${result.replace(/\n/g, '<br>')}`;
-        userInputElement.value = '';
-        sendButton.disabled = false;
-        sendButton.textContent = isEn ? 'Send' : '送信';
-        chatLog.scrollTop = chatLog.scrollHeight;
-        return;
-        
     } else if (isSarasinaModel) {
-        // --- SoftBank Sarasina Model (FastAPIプロキシ経由) ---
+        // --- Sarasina Model ---
         endpoint = 'http://localhost:8001/api/sarasina';
-        bodyData = {
-            model: modelSelect,
-            prompt: prompt,
-            temperature: 0.1
-        };
-        isStreaming = false;
-    } else {
-        // --- Ollama Local Model ---
-        endpoint = 'http://localhost:11434/api/generate';
-        // LocalStorageから設定を取得 (デフォルトはlocalhost)
-        let ollamaBaseUrl = localStorage.getItem('plowerOllamaEndpoint') || 'http://localhost:11434';
-        if (ollamaBaseUrl.endsWith('/')) ollamaBaseUrl = ollamaBaseUrl.slice(0, -1);
+        bodyData = { model: modelSelect, prompt: prompt, temperature: 0.1 };
         
-        if (ollamaBaseUrl.endsWith('/api/generate')) {
-            endpoint = ollamaBaseUrl;
-        } else {
-            endpoint = `${ollamaBaseUrl}/api/generate`;
-        }
-
-        // コンテキストサイズ設定 (Ollamaモデルのみ)
-        const numCtx = (modelSelect.includes('20b') || modelSelect.includes('12b') || modelSelect.includes('120b')) ? 8192 : 4096;
-        
-        bodyData = {
-            model: modelSelect, 
-            prompt: prompt,
-            stream: true,
-            options: { 
-                temperature: 0.1, 
-                num_ctx: numCtx
-            }
-        };
-        isStreaming = true;
-    }
-
-    try {
-        // --- APIリクエストの実行 ---
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bodyData)
         });
-
-        // HTMLが返ってきた場合はURL間違いの可能性が高い (Hugging Face SpaceのWeb URLを指定している場合など)
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("text/html")) {
-             const htmlText = await response.text();
-             let errorMsg = isEn 
-                ? "Server returned HTML. The URL might be incorrect, or the Hugging Face Space is in an 'Error' or 'Building' state." 
-                : "サーバーからHTMLが返されました。URLが間違っているか、Hugging Face Spaceが「Error」または「Building」の状態です。";
-             
-             if (htmlText.includes("Your space is in error")) {
-                 errorMsg += isEn ? " (Status: Space is in Error - Check Space Logs)" : " (ステータス: Spaceエラー発生中 - Spaceのログを確認してください)";
-             }
-             
-             throw new Error(errorMsg);
-        }
-
-        if (!response.ok) {
-            const errorDetail = await response.text();
-            
-            // 404エラーの場合、モデルがサーバー(Space)にない可能性が高い
-            if (response.status === 404 && !isGeminiCloudModel && !isSarasinaModel) {
-                 throw new Error(isEn 
-                    ? `Model '${modelSelect}' not found on the Ollama server (Space). The Space needs to pull this model first.` 
-                    : `Ollamaサーバー(Space)上にモデル '${modelSelect}' が見つかりません。Space側でこのモデルをダウンロード(pull)する必要があります。`);
-            }
-            
-            // 403 Forbidden の場合 (CORS/Origin設定ミス)
-            if (response.status === 403) {
-                throw new Error(isEn 
-                    ? `Access Forbidden (403). The Ollama server rejected the request. Check if 'OLLAMA_ORIGINS' in Dockerfile is set to '*' (without quotes).`
-                    : `アクセスが拒否されました (403)。Ollamaサーバーがリクエストを拒否しました。Dockerfileの 'OLLAMA_ORIGINS' が '*' (引用符なし) に設定されているか確認してください。`);
-            }
-
-            let errorSource = 'Ollamaサーバー';
-            if (isGeminiCloudModel) errorSource = 'FastAPIプロキシ/Gemini API';
-            if (isSarasinaModel) errorSource = 'FastAPIプロキシ/Sarasina API';
-            
-            throw new Error(`${errorSource} エラー: ${response.status} ${response.statusText}. モデル: ${modelSelect} のロードまたは通信に失敗しました。詳細: ${errorDetail.slice(0, 100)}...`);
-        }
-
-        // --- ストリーミング/非ストリーミングの処理分岐 ---
-        if (isStreaming) {
-            // Ollama (ストリーミング) 処理
-            if (!response.body) throw new Error("Ollamaサーバーから応答ボディがありません。");
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                
-                const chunk = decoder.decode(value, { stream: true });
-                chunk.trim().split('\n').forEach(line => {
-                    if (line) {
-                        try {
-                            const json = JSON.parse(line);
-                            if (json.response) {
-                                result += json.response;
-                                // 応答をリアルタイムで表示し、改行を<br>に変換
-                                responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${result.replace(/\n/g, '<br>')}`;
-                            }
-                        } catch (e) {
-                            // JSON解析エラーは無視 (部分的なストリームチャンクの可能性)
-                        }
-                    }
-                });
-            }
-        } else {
-            // Gemini / Sarasina (非ストリーミング) 処理
-            const json = await response.json();
-            
-            if (isGeminiCloudModel) {
-                // Gemini APIのレスポンス形式
-                if (json.candidates && json.candidates[0].content.parts[0].text) {
-                    result = json.candidates[0].content.parts[0].text;
-                } else {
-                    throw new Error(`Gemini API Error: ${JSON.stringify(json)}`);
-                }
-            } else {
-                // Sarasina (プロキシ経由) のレスポンス形式
-                if (json.response) {
-                    result = json.response;
-                } else if (json.detail) {
-                    throw new Error(`プロキシ処理エラー: ${json.detail}`);
-                } else {
-                    throw new Error("予期しない応答形式です。");
-                }
-            }
-        }
         
-        // 最終結果の表示（非ストリーミングの場合、ここで一度に更新）
-        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${result.replace(/\n/g, '<br>')}`;
+        if (!response.ok) throw new Error(`Sarasina Error: ${response.statusText}`);
+        const json = await response.json();
+        result = json.response || json.detail || "";
+        if (onChunk) onChunk(result);
+        return result;
+
+    } else {
+        // --- Ollama Model ---
+        let ollamaBaseUrl = localStorage.getItem('plowerOllamaEndpoint') || 'http://localhost:11434';
+        if (ollamaBaseUrl.endsWith('/')) ollamaBaseUrl = ollamaBaseUrl.slice(0, -1);
+        endpoint = ollamaBaseUrl.endsWith('/api/generate') ? ollamaBaseUrl : `${ollamaBaseUrl}/api/generate`;
+
+        bodyData = {
+            model: modelSelect, 
+            prompt: prompt,
+            stream: true,
+            options: { temperature: 0.1, num_ctx: 8192 }
+        };
+
+        return await fetchOllamaStream(endpoint, bodyData, onChunk);
+    }
+}
+
+// Ollamaストリーミング処理のヘルパー
+async function fetchOllamaStream(endpoint, bodyData, onChunk) {
+    let result = '';
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData)
+    });
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+         throw new Error("Server returned HTML. Check URL or Space status.");
+    }
+
+    if (!response.ok) {
+        if (response.status === 404) throw new Error(`Model '${bodyData.model}' not found.`);
+        if (response.status === 403) throw new Error(`Access Forbidden (403). Check OLLAMA_ORIGINS.`);
+        throw new Error(`Ollama Error: ${response.status} ${response.statusText}`);
+    }
+
+    if (!response.body) throw new Error("No response body.");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        chunk.trim().split('\n').forEach(line => {
+            if (line) {
+                try {
+                    const json = JSON.parse(line);
+                    if (json.response) {
+                        result += json.response;
+                        if (onChunk) onChunk(result);
+                    }
+                } catch (e) {}
+            }
+        });
+    }
+    return result;
+}
+
+// --- モデル送信ロジック ---
+async function sendToModel() {
+    const userInputElement = document.getElementById('userInput');
+    const userInput = userInputElement.value.trim();
+    const pasteAreaContent = document.getElementById('pasteArea').value.trim();
+    const chatLog = document.getElementById('chatLog');
+    const sendButton = document.getElementById('sendButton');
+    const modelSelect = document.getElementById('modelSelect').value;
+    const apiKey = document.getElementById('geminiApiKey').value.trim();
+
+    if (!userInput) {
+        alert(isEn ? "Please enter a question." : "質問を入力してください。");
+        return;
+    }
+
+    sendButton.disabled = true;
+    sendButton.textContent = isEn ? 'Sending...' : '送信中...';
+    chatLog.innerHTML += `<p><strong>${isEn ? 'Question' : '質問'}:</strong> ${userInput}</p>`;
+    const responseParagraph = document.createElement('p');
+    responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> (${isEn ? 'Processing...' : '処理中...'})`;
+    chatLog.appendChild(responseParagraph);
+
+    // 全てのRAGソースを統合
+    let allDocuments = [...persistentDocuments, ...ocrDocuments];
+    if (pasteAreaContent) {
+        // 貼り付けエリアのテキストは一時文書として扱う
+        allDocuments.push({ name: '貼付けテキスト(一時)', content: pasteAreaContent });
+    }
+    
+    // --- フロントエンドでの検索処理を廃止 ---
+    // ユーザーの指示に基づき、ローカルでの検索や翻訳を行わず、全ての文書をコンテキストとしてLLMに渡す。
+    console.log(`全ての文書(${allDocuments.length}件)をコンテキストとして使用します。`);
+    const context = allDocuments.map(doc => `【${doc.name}】\n${doc.content}`).join('\n\n').slice(0, 10000); // 10000文字に制限
+
+    // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
+    // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
+    const prompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
+
+IMPORTANT INSTRUCTIONS:
+1.  **Answer in the same language as the user's [Question].** (e.g., if the question is in Japanese, your answer MUST be in Japanese).
+2.  Base your answer strictly on the information within the [Reference Documents]. Do not use any external knowledge.
+3.  **Language Handling:** The documents may be in a different language than the question. You must translate and interpret the documents to answer the question accurately.
+4.  If the answer cannot be found in the [Reference Documents], you MUST state that the information is not available, in the same language as the question.
+
+[Reference Documents]
+${context}
+
+[Question]
+${userInput}`;
+
+    // --- 回答生成 ---
+    try {
+        // 共通関数を使ってリクエスト
+        const finalResult = await performLlmRequest(modelSelect, prompt, apiKey, (chunkText) => {
+            // ストリーミング更新
+            responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
+            chatLog.scrollTop = chatLog.scrollHeight;
+        });
+
+        // 最終結果の表示 (非ストリーミングモデル用)
+        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${finalResult.replace(/\n/g, '<br>')}`;
         userInputElement.value = ''; // 質問欄をクリア
 
     } catch (error) {
         let errorMsg = error.message;
         // HTTPS環境からHTTP(ローカル)へ接続しようとして失敗した場合のヒントを追加
-        if (window.location.protocol === 'https:' && endpoint.startsWith('http:') && (error.message === 'Failed to fetch' || error.name === 'TypeError')) {
+        if (window.location.protocol === 'https:' && error.message.includes('Failed to fetch')) {
             errorMsg += isEn 
                 ? "<br>⚠️ Mixed Content Error: Cannot connect to HTTP (Localhost) from HTTPS app. Please use an HTTPS endpoint (e.g., Hugging Face Space) or use a tunneling tool like ngrok."
                 : "<br>⚠️ 混在コンテンツエラー: HTTPSでホストされたアプリから、HTTPのローカルサーバー(Ollama)には直接接続できません。<br>Hugging Face SpaceなどのHTTPSエンドポイントを使用するか、ngrok等でローカルサーバーをHTTPS化してください。";
@@ -1082,6 +949,17 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('plowerOllamaEndpoint', url);
         alert(finalMessage);
     });
+
+    // Ollama URL削除ボタンを動的に追加
+    const deleteOllamaBtn = document.createElement('button');
+    deleteOllamaBtn.textContent = isEn ? 'Delete URL' : 'URL削除';
+    deleteOllamaBtn.style.marginLeft = '5px';
+    deleteOllamaBtn.addEventListener('click', () => {
+        localStorage.removeItem('plowerOllamaEndpoint');
+        ollamaInput.value = 'http://localhost:11434';
+        alert(isEn ? 'Saved Ollama URL deleted (Reset to default).' : '保存されたOllama URLを削除しました（デフォルトに戻りました）。');
+    });
+    saveOllamaBtn.parentNode.insertBefore(deleteOllamaBtn, saveOllamaBtn.nextSibling);
 
     // Enterキーでの送信機能
     document.getElementById('userInput').addEventListener('keypress', function(e) {
