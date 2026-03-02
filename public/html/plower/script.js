@@ -840,19 +840,21 @@ async function sendToModel() {
 
     // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
     // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
-    const prompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
+    const prompt = `### Instructions
+You are an AI assistant. Answer the Question based ONLY on the provided Reference Documents.
 
-IMPORTANT INSTRUCTIONS:
-1.  **Answer in the same language as the user's [Question].** (e.g., if the question is in Japanese, your answer MUST be in Japanese).
-2.  Base your answer strictly on the information within the [Reference Documents]. Do not use any external knowledge.
-3.  **Language Handling:** The documents may be in a different language than the question. You must translate and interpret the documents to answer the question accurately.
-4.  If the answer cannot be found in the [Reference Documents], you MUST state that the information is not available, in the same language as the question.
+**CRITICAL RULE: Answer in the SAME LANGUAGE as the Question.**
+- If the Question is in English, answer in English.
+- If the Question is in Japanese, answer in Japanese.
+- Even if the Reference Documents are in Japanese, you MUST translate the information into English if the Question is in English.
 
-[Reference Documents]
+### Reference Documents
 ${context}
 
-[Question]
-${userInput}`;
+### Question
+${userInput}
+
+### Answer`;
 
     // --- 回答生成 ---
     try {
