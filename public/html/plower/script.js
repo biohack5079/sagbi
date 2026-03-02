@@ -873,6 +873,16 @@ ${userInput}`;
     } else {
         // --- Ollama Local Model ---
         endpoint = 'http://localhost:11434/api/generate';
+        // LocalStorageから設定を取得 (デフォルトはlocalhost)
+        let ollamaBaseUrl = localStorage.getItem('plowerOllamaEndpoint') || 'http://localhost:11434';
+        if (ollamaBaseUrl.endsWith('/')) ollamaBaseUrl = ollamaBaseUrl.slice(0, -1);
+        
+        if (ollamaBaseUrl.endsWith('/api/generate')) {
+            endpoint = ollamaBaseUrl;
+        } else {
+            endpoint = `${ollamaBaseUrl}/api/generate`;
+        }
+
         // コンテキストサイズ設定 (Ollamaモデルのみ)
         const numCtx = (modelSelect.includes('20b') || modelSelect.includes('12b') || modelSelect.includes('120b')) ? 8192 : 4096;
         
@@ -896,8 +906,31 @@ ${userInput}`;
             body: JSON.stringify(bodyData)
         });
 
+        // HTMLが返ってきた場合はURL間違いの可能性が高い (Hugging Face SpaceのWeb URLを指定している場合など)
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("text/html")) {
+             const htmlText = await response.text();
+             let errorMsg = isEn 
+                ? "Server returned HTML. The URL might be incorrect, or the Hugging Face Space is in an 'Error' or 'Building' state." 
+                : "サーバーからHTMLが返されました。URLが間違っているか、Hugging Face Spaceが「Error」または「Building」の状態です。";
+             
+             if (htmlText.includes("Your space is in error")) {
+                 errorMsg += isEn ? " (Status: Space is in Error - Check Space Logs)" : " (ステータス: Spaceエラー発生中 - Spaceのログを確認してください)";
+             }
+             
+             throw new Error(errorMsg);
+        }
+
         if (!response.ok) {
             const errorDetail = await response.text();
+            
+            // 404エラーの場合、モデルがサーバー(Space)にない可能性が高い
+            if (response.status === 404 && !isGeminiCloudModel && !isSarasinaModel) {
+                 throw new Error(isEn 
+                    ? `Model '${modelSelect}' not found on the Ollama server (Space). The Space needs to pull this model first.` 
+                    : `Ollamaサーバー(Space)上にモデル '${modelSelect}' が見つかりません。Space側でこのモデルをダウンロード(pull)する必要があります。`);
+            }
+
             let errorSource = 'Ollamaサーバー';
             if (isGeminiCloudModel) errorSource = 'FastAPIプロキシ/Gemini API';
             if (isSarasinaModel) errorSource = 'FastAPIプロキシ/Sarasina API';
@@ -961,7 +994,14 @@ ${userInput}`;
         userInputElement.value = ''; // 質問欄をクリア
 
     } catch (error) {
-        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${error.message}`;
+        let errorMsg = error.message;
+        // HTTPS環境からHTTP(ローカル)へ接続しようとして失敗した場合のヒントを追加
+        if (window.location.protocol === 'https:' && endpoint.startsWith('http:') && (error.message === 'Failed to fetch' || error.name === 'TypeError')) {
+            errorMsg += isEn 
+                ? "<br>⚠️ Mixed Content Error: Cannot connect to HTTP (Localhost) from HTTPS app. Please use an HTTPS endpoint (e.g., Hugging Face Space) or use a tunneling tool like ngrok."
+                : "<br>⚠️ 混在コンテンツエラー: HTTPSでホストされたアプリから、HTTPのローカルサーバー(Ollama)には直接接続できません。<br>Hugging Face SpaceなどのHTTPSエンドポイントを使用するか、ngrok等でローカルサーバーをHTTPS化してください。";
+        }
+        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${errorMsg}`;
         console.error("Model request error:", error);
     } finally {
         sendButton.disabled = false;
@@ -1011,6 +1051,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     saveKeyBtn.parentNode.insertBefore(deleteKeyBtn, saveKeyBtn.nextSibling);
     
+    // --- Ollama URL設定の初期化とイベントリスナー ---
+    const ollamaInput = document.getElementById('ollamaUrlInput');
+    ollamaInput.value = localStorage.getItem('plowerOllamaEndpoint') || 'http://localhost:11434';
+
+    const saveOllamaBtn = document.getElementById('saveOllamaUrlButton');
+    saveOllamaBtn.addEventListener('click', () => {
+        let url = ollamaInput.value.trim();
+        if (!url) url = 'http://localhost:11434';
+        let finalMessage = isEn ? 'Ollama URL saved.' : 'OllamaのURL設定を保存しました。';
+        
+        // Hugging Face SpacesのWeb URLが入力された場合、Direct URLに自動変換する
+        // 例: https://huggingface.co/spaces/username/spacename -> https://username-spacename.hf.space
+        const hfMatch = url.match(/^https?:\/\/huggingface\.co\/spaces\/([^\/]+)\/([^\/]+)\/?$/);
+        if (hfMatch) {
+            const username = hfMatch[1].toLowerCase();
+            const spacename = hfMatch[2].toLowerCase();
+            url = `https://${username}-${spacename}.hf.space`;
+            ollamaInput.value = url; // 入力欄も更新
+            finalMessage = isEn ? 'Converted Hugging Face Space URL to Direct URL format and saved.' : 'Hugging Face SpaceのWeb URLを検出し、API用のDirect URL形式に自動変換して保存しました。';
+        }
+        
+        localStorage.setItem('plowerOllamaEndpoint', url);
+        alert(finalMessage);
+    });
+
     // Enterキーでの送信機能
     document.getElementById('userInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {

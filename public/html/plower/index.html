@@ -46,8 +46,15 @@
         <button id="saveKeyButton">キーをブラウザに保存</button>
     </div>
 
+    <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
+        <label for="ollamaUrlInput">Ollama URL:</label>
+        <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434" style="width: 300px;">
+        <button id="saveOllamaUrlButton">URL保存</button>
+    </div>
+
     <label for="modelSelect">モデル選択:</label>
     <select id="modelSelect">
+        <option value="gemma:2b">Gemma 2B (Ollama - Test)</option>
         <option value="gemma:7b">Gemma 7B (Ollama)</option>
         <option value="gpt-oss:20b">GPT-OSS 20B (Ollama)</option>
         <option value="gemma3:12b">Gemma 12B (Ollama)</option>
@@ -80,7 +87,9 @@
                 saveKey: 'Save Key to Browser',
                 modelLabel: 'Select Model:',
                 send: 'Send',
-                cloud: '(Cloud)'
+                cloud: '(Cloud)',
+                ollamaUrlLabel: 'Ollama URL:',
+                saveOllamaUrl: 'Save URL'
             };
 
             document.title = t.title;
@@ -98,6 +107,8 @@
             document.querySelector('label[for="geminiApiKey"]').textContent = t.keyLabel;
             document.getElementById('saveKeyButton').textContent = t.saveKey;
             document.querySelector('label[for="modelSelect"]').textContent = t.modelLabel;
+            document.querySelector('label[for="ollamaUrlInput"]').textContent = t.ollamaUrlLabel;
+            document.getElementById('saveOllamaUrlButton').textContent = t.saveOllamaUrl;
             document.getElementById('sendButton').textContent = t.send;
             
             const select = document.getElementById('modelSelect');
