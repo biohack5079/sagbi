@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="ja"><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<html lang="ja">
+<head>
     <meta charset="UTF-8">
     <title>ローカル情報を掘り起こすAIショベル「プラウアー」。</title>
-    <link rel="stylesheet" href="%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%AB%E6%83%85%E5%A0%B1%E3%82%92%E6%8E%98%E3%82%8A%E8%B5%B7%E3%81%93%E3%81%99AI%E3%82%B7%E3%83%A7%E3%83%99%E3%83%AB%E3%80%8C%E3%83%97%E3%83%A9%E3%82%A6%E3%82%A2%E3%83%BC%E3%80%8D%E3%80%82_files/style.css"> 
-    <script src="%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%AB%E6%83%85%E5%A0%B1%E3%82%92%E6%8E%98%E3%82%8A%E8%B5%B7%E3%81%93%E3%81%99AI%E3%82%B7%E3%83%A7%E3%83%99%E3%83%AB%E3%80%8C%E3%83%97%E3%83%A9%E3%82%A6%E3%82%A2%E3%83%BC%E3%80%8D%E3%80%82_files/tesseract.min.js"></script>
+    <link rel="stylesheet" href="style.css"> 
+    <script src='https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'></script>
     <style>
         h1 {
             white-space: nowrap;
@@ -15,7 +15,7 @@
     <h1>ローカル情報を掘り起こすAIショベル「プラウアー」。</h1>
     <div class="rag-controls-header">
         <label for="fileInput">RAGソース (フォルダ/ファイル):</label>
-        <input type="file" id="fileInput" multiple="">
+        <input type="file" id="fileInput" multiple>
         <button id="syncFolderButton">ローカルフォルダ同期 (File System API)</button>
         <button id="resetDocsButton">RAGソースをリセット (LocalStore全削除)</button>
     </div>
@@ -23,11 +23,11 @@
     <div class="rag-source-container">
         <div id="fileList">
             <h3>RAGソースファイル一覧 (永続化/アップロード)</h3>
-            <ul id="fileListUl"></ul>
+            <ul id="fileListUl">
+            </ul>
         </div>
         
-        <div id="fileContent"><h3>RAGソース文書プレビュー (最新5件)</h3>
-<p>現在RAGのソースとなる文書はありません。</p></div>
+        <div id="fileContent">【ここに読み込まれた文書のプレビューまたは選択内容が表示されます】</div>
     </div>
     <hr>
 
@@ -43,13 +43,13 @@
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
         <label for="geminiApiKey">Gemini API Key (クラウド利用時のみ):</label>
         <input type="password" id="geminiApiKey" placeholder="AIzaSy..." style="width: 300px;">
-        <button id="saveKeyButton">キーをブラウザに保存</button><button style="margin-left: 5px;">キー削除</button>
+        <button id="saveKeyButton">キーをブラウザに保存</button>
     </div>
 
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
         <label for="ollamaUrlInput">Ollama URL (Default: localhost):</label>
-        <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434 or your Hugging Face URL" style="width: 300px;" value="http://localhost:11434">
-        <button id="saveOllamaUrlButton">URL保存</button><button style="margin-left: 5px;">URL削除</button>
+        <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434 or your Hugging Face URL" style="width: 300px;">
+        <button id="saveOllamaUrlButton">URL保存</button>
     </div>
 
     <label for="modelSelect">モデル選択:</label>
@@ -60,7 +60,7 @@
         <option value="gpt-oss:120b">GPT-OSS 120B (Ollama)</option>
 
         <option value="sarasina">Sarasina (SoftBank/Ollama)</option>
-        <option value="gemini-flash" selected="selected">Gemini API Flash (クラウド)</option>
+        <option value="gemini-flash" selected>Gemini API Flash (クラウド)</option>
         <option value="gemini-pro">Gemini API Pro (クラウド)</option>
     </select>
     
@@ -119,6 +119,6 @@
             document.documentElement.lang = 'en';
         }
     </script>
-    <script src="%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%AB%E6%83%85%E5%A0%B1%E3%82%92%E6%8E%98%E3%82%8A%E8%B5%B7%E3%81%93%E3%81%99AI%E3%82%B7%E3%83%A7%E3%83%99%E3%83%AB%E3%80%8C%E3%83%97%E3%83%A9%E3%82%A6%E3%82%A2%E3%83%BC%E3%80%8D%E3%80%82_files/script.js"></script>
-
-</body></html>
+    <script src="script.js"></script>
+</body>
+</html>
