@@ -745,8 +745,10 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
         const response = await fetch(hfEndpoint, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${hfToken.trim()}`,
-                'Content-Type': 'application/json'
+                'Authorization': `Bearer ${hfToken.trim().replace(/^Bearer\s+/i, '')}`,
+                // Content-Typeを指定するとプリフライトが発生しやすいため、
+                // もしエラーが続く場合はここを調整する場合があります。
+                'Content-Type': 'application/json',
             },
             body: JSON.stringify({
                 inputs: ragPrompt,
