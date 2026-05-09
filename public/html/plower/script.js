@@ -738,9 +738,9 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // OpenAI互換のグローバルエンドポイントを使用します。
-        // モデル固有パスでのCORSエラーを回避するため、標準的なエンドポイントに変更します。
-        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
+        // モデル固有のOpenAI互換エンドポイントを使用します。
+        // グローバルな /v1/... よりも、モデル指定のパスの方がCORS（クロスドメイン制限）を回避できるケースが多いです。
+        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
