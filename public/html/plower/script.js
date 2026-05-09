@@ -738,14 +738,14 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // 重要: /v1/chat/completions を含めるとCORSエラーになります。
-        // 必ずモデル名までのURLを使用してください。
+        // 【超重要】 /v1/chat/completions というパスはブラウザ（CORS）を拒否します。
+        // 以下のシンプルなURL形式にすることで、ブラウザからのアクセスが許可されやすくなります。
         const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${hfToken.replace(/\s+/g, '')}`,
+                'Authorization': `Bearer ${hfToken.trim()}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
