@@ -738,9 +738,10 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // グローバルなOpenAI互換エンドポイントを使用します。
-        // 特定モデルのパスでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するための変更です。
-        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
+        // モデル固有のエンドポイントを使用します。
+        // 共通エンドポイントでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するため、
+        // 推論APIの標準的な形式に変更し、ヘッダーで待機フラグを明示します。
+        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
@@ -749,14 +750,12 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
             headers: {
                 'Authorization': `Bearer ${hfToken.trim()}`,
                 'Content-Type': 'application/json',
-                'Accept': 'text/event-stream'
+                'x-wait-for-model': 'true'
             },
             body: JSON.stringify({
-                model: modelId,
                 messages: [{ role: "user", content: llmPrompt }],
                 max_tokens: 2048,
-                stream: true,
-                wait_for_model: true
+                stream: true
             })
         });
 
@@ -913,7 +912,7 @@ async function sendToModel() {
 
     // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
     // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
-    const prompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
+    const finalPrompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
 
 IMPORTANT INSTRUCTIONS:
 1.  **Answer in the same language as the user's [Question].** (If the question is in Japanese, answer in Japanese. If in English, answer in English).
@@ -930,7 +929,7 @@ ${userInput}`;
     // --- 回答生成 ---
     try {
         // 共通関数を使ってリクエスト
-        const finalResult = await performLlmRequest(modelSelect, prompt, geminiApiKey, (chunkText) => {
+        const finalResult = await performLlmRequest(modelSelect, finalPrompt, geminiApiKey, (chunkText) => {
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
