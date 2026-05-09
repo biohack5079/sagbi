@@ -28,7 +28,10 @@ ENV OLLAMA_MODELS=$HOME/.ollama/models
 USER 1000
 
 # モデルのプリインストール (タイムアウト回避のため Gemma 2 2B に変更)
-RUN (ollama serve &) && sleep 10 && ollama pull gemma2:2b
+RUN (ollama serve &) && \
+    until ollama list >/dev/null 2>&1; do sleep 1; done && \
+    ollama pull gemma2:2b && \
+    pkill ollama
 
 # 【重要】ベースイメージのENTRYPOINT（ollamaコマンドの自動実行）を無効化します
 ENTRYPOINT []

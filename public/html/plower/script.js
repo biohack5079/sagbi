@@ -660,7 +660,7 @@ function saveOcrTextAsFile() {
 
 
 // --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
-async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
+async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null) {
     let result = '';
     let endpoint = '';
     let bodyData = {};
@@ -668,7 +668,7 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
     
     const isGeminiCloudModel = modelSelect.toLowerCase().startsWith('gemini');
     const isSarasinaModel = modelSelect.toLowerCase().includes('sarasina');
-    const isHfCloudModel = modelSelect === 'huggingface';
+    const isHfCloudModel = modelSelect === 'gemma2:2b';
     
     if (isGeminiCloudModel) {
         // --- Gemini Cloud Model ---
@@ -689,7 +689,7 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
                 console.log(`Trying Gemini model: ${modelVersion}`);
                 const currentEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelVersion}:generateContent?key=${apiKey}`;
                 const currentBody = {
-                    contents: [{ parts: [{ text: prompt }] }],
+                    contents: [{ parts: [{ text: llmPrompt }] }],
                     generationConfig: { temperature: 0.1 }
                 };
 
@@ -735,23 +735,32 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
         const hfToken = localStorage.getItem('plowerHfToken');
         if (!hfToken) throw new Error(isEn ? "Hugging Face Access Token is required for Cloud API." : "クラウドAPIを利用するにはHugging Face Access Tokenが必要です。");
 
-        // 利用するモデルIDを入力させる（デフォルトは高性能なGemma 2）
-        const modelId = prompt(isEn ? "Enter Hugging Face Model ID (e.g., google/gemma-2-9b-it):" : "Hugging FaceのモデルIDを入力してください (例: google/gemma-2-9b-it):", "google/gemma-2-9b-it");
-        if (!modelId) throw new Error("Model ID is required.");
+        // 利用するモデルIDを固定（google/gemma-2-9b-it）
+        const modelId = "google/gemma-2-9b-it";
+        
+        // グローバルなOpenAI互換エンドポイントを使用します。
+        // 特定モデルのパスでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するための変更です。
+        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
 
-        const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`, {
+        const response = await fetch(hfEndpoint, {
             method: 'POST',
+            mode: 'cors',
+            credentials: 'omit',
             headers: {
-                'Authorization': `Bearer ${hfToken}`,
-                'Content-Type': 'application/json'
+                'Authorization': `Bearer ${hfToken.trim()}`,
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
             },
             body: JSON.stringify({
                 model: modelId,
-                messages: [{ role: "user", content: prompt }],
+                messages: [{ role: "user", content: llmPrompt }],
                 max_tokens: 2048,
-                stream: true
+                stream: true,
+                wait_for_model: true
             })
         });
+
+        console.log("HF Response Status:", response.status);
 
         if (!response.ok) {
             const errText = await response.text();
@@ -759,11 +768,11 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
         }
 
         const reader = response.body.getReader();
-        const decoder = new TextDecoder();
+        const decoder = new TextDecoder('utf-8');
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value);
+            const chunk = decoder.decode(value, { stream: true });
             const lines = chunk.split('\n');
             for (const line of lines) {
                 if (line.trim().startsWith('data: ')) {
@@ -785,7 +794,7 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
     } else if (isSarasinaModel) {
         // --- Sarasina Model ---
         endpoint = 'http://localhost:8001/api/sarasina';
-        bodyData = { model: modelSelect, prompt: prompt, temperature: 0.1 };
+        bodyData = { model: modelSelect, prompt: llmPrompt, temperature: 0.1 };
         
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -807,7 +816,7 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
 
         bodyData = {
             model: modelSelect,
-            prompt: prompt,
+            prompt: llmPrompt,
             stream: true,
             options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
         };
@@ -934,10 +943,23 @@ ${userInput}`;
     } catch (error) {
         let errorMsg = error.message;
         // HTTPS環境からHTTP(ローカル)へ接続しようとして失敗した場合のヒントを追加
-        if (window.location.protocol === 'https:' && error.message.includes('Failed to fetch')) {
-            errorMsg += isEn 
-                ? "<br>⚠️ Mixed Content Error: Cannot connect to HTTP (Localhost) from HTTPS app. Please use an HTTPS endpoint (e.g., Hugging Face Space) or use a tunneling tool like ngrok."
-                : "<br>⚠️ 混在コンテンツエラー: HTTPSでホストされたアプリから、HTTPのローカルサーバー(Ollama)には直接接続できません。<br>Hugging Face SpaceなどのHTTPSエンドポイントを使用するか、ngrok等でローカルサーバーをHTTPS化してください。";
+        const isNetworkError = error.name === 'TypeError' || error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network');
+        
+        if (isNetworkError) {
+            if (window.location.protocol === 'file:') {
+                errorMsg += isEn 
+                    ? "<br>⚠️ <strong>Security Restriction:</strong> You cannot make API requests when opening the file directly (file://). Please use a local server like 'Live Server' in VS Code or run 'npx serve'."
+                    : "<br>⚠️ <strong>セキュリティ制限:</strong> ファイルを直接ブラウザで開いている(file://)ため、APIリクエストが遮断されました。VS CodeのLive Serverを使用するか、'npx serve' 等のローカルサーバー経由で開いてください。";
+            } else {
+                errorMsg += isEn 
+                    ? "<br>⚠️ Request Blocked: Check your Internet connection and API Token. If using Gemma 2, make sure you've accepted the license on the Hugging Face model page."
+                    : "<br>⚠️ リクエストが遮断されました: トークンの権限、ネット接続、広告ブロックを確認してください。Gemma 2を使用する場合、HFのモデルページでライセンスへの同意が必要です。";
+                errorMsg += `<br><small>Debug Info: ${error.name} - ${error.message}</small>`;
+                
+                if (window.location.protocol === 'https:') {
+                    errorMsg += isEn ? " (Mixed Content check)" : " (HTTPS/HTTP混在の可能性)";
+                }
+            }
         }
         responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${errorMsg}`;
         console.error("Model request error:", error);
