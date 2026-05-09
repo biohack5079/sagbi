@@ -671,11 +671,8 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
         if (!apiKey) throw new Error("Gemini API Key is required.");
 
         let candidates = [];
-        if (modelSelect.includes('flash')) {
-            candidates = ['gemini-2.5-flash', 'gemini-flash-lite', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-flash-002', 'gemini-1.5-flash-001'];
-        } else {
-            candidates = ['gemini-2.5-pro', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-pro', 'gemini-1.5-pro-002', 'gemini-1.5-pro-001'];
-        }
+        // Pro版は削除し、常に無料枠や高速動作に適したFlash候補を使用
+        candidates = ['gemini-2.0-flash', 'gemini-2.0-flash-lite-preview-02-05', 'gemini-1.5-flash', 'gemini-1.5-flash-002'];
 
         let success = false;
         let lastError = null;
@@ -753,7 +750,7 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
             model: modelSelect, 
             prompt: prompt,
             stream: true,
-            options: { temperature: 0.1, num_ctx: 8192 }
+            options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
         };
 
         return await fetchOllamaStream(endpoint, bodyData, onChunk);
@@ -836,25 +833,23 @@ async function sendToModel() {
     // --- フロントエンドでの検索処理を廃止 ---
     // ユーザーの指示に基づき、ローカルでの検索や翻訳を行わず、全ての文書をコンテキストとしてLLMに渡す。
     console.log(`全ての文書(${allDocuments.length}件)をコンテキストとして使用します。`);
-    const context = allDocuments.map(doc => `【${doc.name}】\n${doc.content}`).join('\n\n').slice(0, 10000); // 10000文字に制限
+    const context = allDocuments.map(doc => `File: ${doc.name}\nContent: ${doc.content}`).join('\n\n').slice(0, 15000); // 制限を少し緩和
 
     // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
     // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
-    const prompt = `### Instructions
-You are an AI assistant. Answer the Question based ONLY on the provided Reference Documents.
+    const prompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
 
-**CRITICAL RULE: Answer in the SAME LANGUAGE as the Question.**
-- If the Question is in English, answer in English.
-- If the Question is in Japanese, answer in Japanese.
-- Even if the Reference Documents are in Japanese, you MUST translate the information into English if the Question is in English.
+IMPORTANT INSTRUCTIONS:
+1.  **Answer in the same language as the user's [Question].** (If the question is in Japanese, answer in Japanese. If in English, answer in English).
+2.  Base your answer strictly on the information within the [Reference Documents]. Do not use any external knowledge.
+3.  **Language Handling:** The documents may be in a different language than the question. You must translate and interpret the documents to answer the question accurately.
+4.  If the answer cannot be found in the [Reference Documents], you MUST state that the information is not available, in the same language as the question.
 
-### Reference Documents
+[Reference Documents]
 ${context}
 
-### Question
-${userInput}
-
-### Answer`;
+[Question]
+${userInput}`;
 
     // --- 回答生成 ---
     try {
