@@ -675,7 +675,11 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
         if (!apiKey) throw new Error("Gemini API Key is required.");
 
         // 利用可能な最新かつ安定したモデルエイリアスのみに絞り込みます
-        const candidates = ['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-1.5-flash'];
+        const candidates = [
+        'gemini-2.5-flash',      // 最新の安定版（メイン利用に推奨）
+        'gemini-2.5-flash-lite', // 軽量・高速版（コスト効率重視）
+        'gemini-1.5-flash'       // 以前の安定版（予備として）
+        ];
 
         let success = false;
         let lastError = null;
