@@ -668,7 +668,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
     
     const isGeminiCloudModel = modelSelect.toLowerCase().startsWith('gemini');
     const isSarasinaModel = modelSelect.toLowerCase().includes('sarasina');
-    const isHfCloudModel = modelSelect === 'gemma2:2b';
+    const isHfCloudModel = modelSelect === 'huggingface';
     
     if (isGeminiCloudModel) {
         // --- Gemini Cloud Model ---
