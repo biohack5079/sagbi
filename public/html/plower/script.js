@@ -738,56 +738,38 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // モデル固有のOpenAI互換エンドポイントを使用します。
-        // グローバルな /v1/... よりも、モデル指定のパスの方がCORS（クロスドメイン制限）を回避できるケースが多いです。
-        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`;
+        // OpenAI互換エンドポイント(/v1/...)はブラウザからのCORS制限が厳しいため、
+        // より汎用的な標準推論APIエンドポイントを使用します。
+        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
-            mode: 'cors',
-            credentials: 'omit',
             headers: {
                 'Authorization': `Bearer ${hfToken.trim()}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: modelId,
-                messages: [{ role: "user", content: ragPrompt }],
-                max_tokens: 2048,
-                stream: true,
-                wait_for_model: true
+                inputs: ragPrompt,
+                parameters: {
+                    max_new_tokens: 2048,
+                    return_full_text: false // 入力プロンプトを含まず、回答のみを返す
+                },
+                options: {
+                    wait_for_model: true
+                }
             })
         });
-
-        console.log("HF Response Status:", response.status);
 
         if (!response.ok) {
             const errText = await response.text();
             throw new Error(`HF Inference API Error: ${response.status} ${errText}`);
         }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-            for (const line of lines) {
-                if (line.trim().startsWith('data: ')) {
-                    const data = line.trim().slice(6);
-                    if (data === '[DONE]') break;
-                    try {
-                        const json = JSON.parse(data);
-                        const delta = json.choices[0].delta?.content;
-                        if (delta) {
-                            result += delta;
-                            if (onChunk) onChunk(result);
-                        }
-                    } catch (e) {}
-                }
-            }
-        }
+        const json = await response.json();
+        // 標準APIは通常、配列の形式で結果を返します
+        result = (Array.isArray(json) ? json[0].generated_text : json.generated_text) || "";
+        
+        if (onChunk) onChunk(result);
         return result;
 
     } else if (isSarasinaModel) {
