@@ -27,8 +27,8 @@ ENV OLLAMA_MODELS=$HOME/.ollama/models
 # 実行ユーザーをUID 1000に切り替え
 USER 1000
 
-# モデルのプリインストール (Gemma 7B)
-RUN (ollama serve &) && sleep 10 && ollama pull gemma:7b
+# モデルのプリインストール (タイムアウト回避のため Gemma 2 2B に変更)
+RUN (ollama serve &) && sleep 10 && ollama pull gemma2:2b
 
 # 【重要】ベースイメージのENTRYPOINT（ollamaコマンドの自動実行）を無効化します
 ENTRYPOINT []

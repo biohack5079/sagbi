@@ -613,14 +613,17 @@ function saveOcrTextAsFile() {
     let contentToSave = '';
     
     // 1. OCRで抽出された一時文書を統合
+    const fileNameLabel = isEn ? 'File Name' : 'ファイル名';
+    const pasteLabel = isEn ? 'Pasted Text' : '貼付テキスト';
+
     allTextDocuments.forEach(doc => {
-        contentToSave += `--- ファイル名: ${doc.name} ---\n`;
+        contentToSave += `--- ${fileNameLabel}: ${doc.name} ---\n`;
         contentToSave += doc.content + '\n\n';
     });
     
     // 2. 貼り付けエリアのテキストを統合
     if (pasteAreaContent) {
-           contentToSave += `--- ファイル名: 貼付テキスト ---\n`;
+           contentToSave += `--- ${fileNameLabel}: ${pasteLabel} ---\n`;
            contentToSave += pasteAreaContent + '\n\n';
     }
 
@@ -672,8 +675,8 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
         if (!apiKey) throw new Error("Gemini API Key is required.");
 
         let candidates = [];
-        // Pro版は削除し、常に無料枠や高速動作に適したFlash候補を使用
-        candidates = ['gemini-2.0-flash', 'gemini-2.0-flash-lite-preview-02-05', 'gemini-1.5-flash', 'gemini-1.5-flash-002'];
+        // モデル選択に応じて候補を設定
+        candidates = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-flash-002', 'gemini-1.5-flash-001'];
 
         let success = false;
         let lastError = null;
@@ -966,9 +969,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const key = document.getElementById('geminiApiKey').value.trim();
         if (key) {
             localStorage.setItem('plowerGeminiApiKey', key);
-            alert(isEn ? 'API Key saved to browser.' : 'APIキーをブラウザに保存しました。次回から自動入力されます。');
+            alert(isEn ? 'Gemini API Key saved.' : 'Gemini APIキーを保存しました。次回から自動入力されます。');
         } else {
-            alert(isEn ? 'API Key is empty. Use "Delete Key" button to remove it.' : 'APIキーが空です。削除する場合は「削除」ボタンを使用してください。');
+            alert(isEn ? 'Key is empty. Use "Delete Key" button to remove it.' : 'キーが空です。削除する場合は「キー削除」ボタンを使用してください。');
         }
     });
 
@@ -979,7 +982,7 @@ document.addEventListener('DOMContentLoaded', () => {
     deleteKeyBtn.addEventListener('click', () => {
         localStorage.removeItem('plowerGeminiApiKey');
         document.getElementById('geminiApiKey').value = '';
-        alert(isEn ? 'Saved API Key deleted.' : '保存されたAPIキーを削除しました。');
+        alert(isEn ? 'Gemini API Key deleted.' : '保存されたGemini APIキーを削除しました。');
     });
     saveKeyBtn.parentNode.insertBefore(deleteKeyBtn, saveKeyBtn.nextSibling);
     
@@ -995,7 +998,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const token = document.getElementById('hfToken').value.trim();
             if (token) {
                 localStorage.setItem('plowerHfToken', token);
-                alert(isEn ? 'HuggingFace Token saved.' : 'HuggingFace Access Tokenを保存しました。');
+                alert(isEn ? 'HuggingFace Token saved.' : 'HuggingFaceトークンを保存しました。');
+            } else {
+                alert(isEn ? 'Token is empty. Use "Delete Token" button to remove it.' : 'トークンが空です。削除する場合は「トークン削除」ボタンを使用してください。');
             }
         });
 
@@ -1045,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', () => {
     deleteHfUrlBtn.addEventListener('click', () => {
         localStorage.removeItem('plowerHfUrl');
         if (hfUrlInput) hfUrlInput.value = 'http://localhost:11434';
-        alert(isEn ? 'Saved HuggingFace URL deleted (Reset to default).' : '保存されたHuggingFace URLを削除しました（デフォルトに戻りました）。');
+        alert(isEn ? 'Saved URL deleted (Reset to default).' : '保存されたURL設定を削除しました（デフォルトのlocalhostに戻りました）。');
     });
     saveHfUrlBtn.parentNode.insertBefore(deleteHfUrlBtn, saveHfUrlBtn.nextSibling);
 

@@ -41,21 +41,21 @@
     <textarea id="userInput" placeholder="質問を入力してください..."></textarea>
     
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-        <label for="geminiApiKey">Gemini API Key (クラウド利用時のみ):</label>
+        <label for="geminiApiKey">Gemini API Key:</label>
         <input type="password" id="geminiApiKey" placeholder="AIzaSy..." style="width: 300px;">
-        <button id="saveKeyButton">キーをブラウザに保存</button>
+        <button id="saveKeyButton">保存</button>
     </div>
 
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-        <label for="hfUrlInput">HuggingFace / Ollama URL:</label>
+        <label for="hfUrlInput">HF / Ollama URL:</label>
         <input type="text" id="hfUrlInput" placeholder="http://localhost:11434 or https://user-space.hf.space" style="width: 300px;">
-        <button id="saveHfUrlButton">URL保存</button>
+        <button id="saveHfUrlButton">保存</button>
     </div>
 
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-        <label for="hfToken">HuggingFace Access Token (Read):</label>
+        <label for="hfToken">HF Access Token:</label>
         <input type="password" id="hfToken" placeholder="hf_..." style="width: 300px;">
-        <button id="saveHfTokenButton">トークン保存</button>
+        <button id="saveHfTokenButton">保存</button>
     </div>
 
     <label for="modelSelect">モデル選択:</label>
@@ -65,7 +65,7 @@
         <option value="gemma3:12b">Gemma 12B (ローカル)</option>
         <option value="gpt-oss:120b">GPT-OSS 120B (ローカル)</option>
         <option value="sarasina">Sarasina (SoftBank/ローカル)</option>
-        <option value="huggingface">HuggingFace (クラウド)</option>
+        <option value="gemma2:2b">HuggingFace (クラウド)</option>
         <option value="gemini-flash" selected>Gemini API (クラウド)</option>
     </select>
     
@@ -87,14 +87,14 @@
                 saveOcr: 'Save OCR/Pasted Text as Persistent File',
                 inputLabel: 'Enter Question:',
                 inputPlaceholder: 'Please enter your question...',
-                keyLabel: 'Gemini API Key (Cloud only):',
-                saveKey: 'Save Key to Browser',
+                keyLabel: 'Gemini API Key:',
+                saveKey: 'Save',
                 modelLabel: 'Select Model:',
                 send: 'Send',
                 cloud: '(Cloud)',
-                hfUrlLabel: 'HuggingFace / Ollama URL:',
+                hfUrlLabel: 'HF / Ollama URL:',
                 saveHfUrl: 'Save URL',
-                hfTokenLabel: 'HuggingFace Access Token:',
+                hfTokenLabel: 'HF Access Token:',
                 saveHfToken: 'Save Token'
             };
 
