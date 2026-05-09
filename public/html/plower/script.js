@@ -660,7 +660,7 @@ function saveOcrTextAsFile() {
 
 
 // --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
-async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null) {
+async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null) {
     let result = '';
     let endpoint = '';
     let bodyData = {};
@@ -668,7 +668,7 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
     
     const isGeminiCloudModel = modelSelect.toLowerCase().startsWith('gemini');
     const isSarasinaModel = modelSelect.toLowerCase().includes('sarasina');
-    const isHfCloudModel = modelSelect === 'hf-cloud-api';
+    const isHfCloudModel = modelSelect === 'huggingface';
     
     if (isGeminiCloudModel) {
         // --- Gemini Cloud Model ---
@@ -689,7 +689,7 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
                 console.log(`Trying Gemini model: ${modelVersion}`);
                 const currentEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelVersion}:generateContent?key=${apiKey}`;
                 const currentBody = {
-                    contents: [{ parts: [{ text: ragPrompt }] }],
+                    contents: [{ parts: [{ text: llmPrompt }] }],
                     generationConfig: { temperature: 0.1 }
                 };
 
@@ -738,46 +738,63 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // 【超重要】 /v1/chat/completions というパスはブラウザ（CORS）を拒否します。
-        // 以下のシンプルなURL形式にすることで、ブラウザからのアクセスが許可されやすくなります。
-        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}`;
+        // グローバルなOpenAI互換エンドポイントを使用します。
+        // 特定モデルのパスでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するための変更です。
+        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
+            mode: 'cors',
+            credentials: 'omit',
             headers: {
-                'Authorization': `Bearer ${hfToken.trim().replace(/^Bearer\s+/i, '')}`,
-                // Content-Typeを指定するとプリフライトが発生しやすいため、
-                // もしエラーが続く場合はここを調整する場合があります。
+                'Authorization': `Bearer ${hfToken.trim()}`,
                 'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
             },
             body: JSON.stringify({
-                inputs: ragPrompt,
-                parameters: {
-                    max_new_tokens: 2048,
-                    return_full_text: false // 入力プロンプトを含まず、回答のみを返す
-                },
-                options: {
-                    wait_for_model: true
-                }
+                model: modelId,
+                messages: [{ role: "user", content: llmPrompt }],
+                max_tokens: 2048,
+                stream: true,
+                wait_for_model: true
             })
         });
+
+        console.log("HF Response Status:", response.status);
 
         if (!response.ok) {
             const errText = await response.text();
             throw new Error(`HF Inference API Error: ${response.status} ${errText}`);
         }
 
-        const json = await response.json();
-        // 標準APIは通常、配列の形式で結果を返します
-        result = (Array.isArray(json) ? json[0].generated_text : json.generated_text) || "";
-        
-        if (onChunk) onChunk(result);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                    const data = line.trim().slice(6);
+                    if (data === '[DONE]') break;
+                    try {
+                        const json = JSON.parse(data);
+                        const delta = json.choices[0].delta?.content;
+                        if (delta) {
+                            result += delta;
+                            if (onChunk) onChunk(result);
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
         return result;
 
     } else if (isSarasinaModel) {
         // --- Sarasina Model ---
         endpoint = 'http://localhost:8001/api/sarasina';
-        bodyData = { model: modelSelect, prompt: ragPrompt, temperature: 0.1 };
+        bodyData = { model: modelSelect, prompt: llmPrompt, temperature: 0.1 };
         
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -799,7 +816,7 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
 
         bodyData = {
             model: modelSelect,
-            prompt: ragPrompt,
+            prompt: llmPrompt,
             stream: true,
             options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
         };
@@ -896,7 +913,7 @@ async function sendToModel() {
 
     // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
     // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
-    const ragPrompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
+    const prompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
 
 IMPORTANT INSTRUCTIONS:
 1.  **Answer in the same language as the user's [Question].** (If the question is in Japanese, answer in Japanese. If in English, answer in English).
@@ -913,7 +930,7 @@ ${userInput}`;
     // --- 回答生成 ---
     try {
         // 共通関数を使ってリクエスト
-        const finalResult = await performLlmRequest(modelSelect, ragPrompt, geminiApiKey, (chunkText) => {
+        const finalResult = await performLlmRequest(modelSelect, prompt, geminiApiKey, (chunkText) => {
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
