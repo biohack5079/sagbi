@@ -738,38 +738,57 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // /v1/... ルートはブラウザの「警備員」にブロックされやすいため、
-        // ブラウザ向けに開放されている標準エンドポイントを使用します。
-        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}`;
+        // グローバルなOpenAI互換エンドポイントを使用します。
+        // 特定モデルのパスでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するための変更です。
+        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
+            mode: 'cors',
+            credentials: 'omit',
             headers: {
                 'Authorization': `Bearer ${hfToken.trim()}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
             },
             body: JSON.stringify({
-                inputs: llmPrompt,
-                parameters: {
-                    max_new_tokens: 2048,
-                    return_full_text: false
-                },
-                options: {
-                    wait_for_model: true
-                }
+                model: modelId,
+                messages: [{ role: "user", content: llmPrompt }],
+                max_tokens: 2048,
+                stream: true,
+                wait_for_model: true
             })
         });
+
+        console.log("HF Response Status:", response.status);
 
         if (!response.ok) {
             const errText = await response.text();
             throw new Error(`HF Inference API Error: ${response.status} ${errText}`);
         }
 
-        const json = await response.json();
-        // 標準APIは結果をリスト形式で返すため、そこからテキストを取り出します。
-        result = (Array.isArray(json) ? json[0].generated_text : json.generated_text) || "";
-        
-        if (onChunk) onChunk(result);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                    const data = line.trim().slice(6);
+                    if (data === '[DONE]') break;
+                    try {
+                        const json = JSON.parse(data);
+                        const delta = json.choices[0].delta?.content;
+                        if (delta) {
+                            result += delta;
+                            if (onChunk) onChunk(result);
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
         return result;
 
     } else if (isSarasinaModel) {
