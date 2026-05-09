@@ -21,7 +21,7 @@ RUN chmod +x start.sh && \
 # 環境変数の設定
 # ポート7860はHugging Face Spacesの要件
 ENV OLLAMA_HOST=0.0.0.0:7860
-ENV OLLAMA_ORIGINS="https://sagbuntu.web.app,http://localhost:*,http://127.0.0.1:*"
+ENV OLLAMA_ORIGINS="https://sagbuntu.web.app,http://localhost:*,http://127.0.0.1:*,https://sagbuntu.web.app/plower/"
 ENV OLLAMA_MODELS=$HOME/.ollama/models
 
 # 実行ユーザーをUID 1000に切り替え
