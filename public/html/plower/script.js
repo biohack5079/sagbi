@@ -736,27 +736,23 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
         if (!hfToken) throw new Error(isEn ? "Hugging Face Access Token is required for Cloud API." : "クラウドAPIを利用するにはHugging Face Access Tokenが必要です。");
 
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
-        const modelId = "google/gemma-2-9b-it";
+        const modelId = "google/gemma-2-9b-it"; // ここを "google/gemma-2-2b-it" にすれば2Bになります
         
-        // グローバルなOpenAI互換エンドポイントを使用します。
-        // 特定モデルのパスでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するための変更です。
-        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
+        // モデル固有の推論エンドポイントを使用。
+        // 経験上、特定のモデルを指定するパスの方がCORSヘッダーが正しく返る確率が高いです。
+        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
-            mode: 'cors',
-            credentials: 'omit',
             headers: {
                 'Authorization': `Bearer ${hfToken.trim()}`,
-                'Content-Type': 'application/json',
-                'Accept': 'text/event-stream'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: modelId,
                 messages: [{ role: "user", content: llmPrompt }],
                 max_tokens: 2048,
                 stream: true,
-                wait_for_model: true
+                options: { wait_for_model: true }
             })
         });
 
