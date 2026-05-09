@@ -668,7 +668,7 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
     
     const isGeminiCloudModel = modelSelect.toLowerCase().startsWith('gemini');
     const isSarasinaModel = modelSelect.toLowerCase().includes('sarasina');
-    const isHfCloudModel = modelSelect === 'huggingface';
+    const isHfCloudModel = modelSelect === 'gemma2:2b';
     
     if (isGeminiCloudModel) {
         // --- Gemini Cloud Model ---
@@ -737,9 +737,9 @@ async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null)
 
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
-        
-        // グローバルなOpenAI互換エンドポイントを使用します。
-        // 特定モデルのパスでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するための変更です。
+
+        // OpenAI互換のグローバルエンドポイントを使用
+        // モデル名をURLに含めない形式にすることで、ブラウザのCORS制限（特にローカル環境）を回避しやすくします
         const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
