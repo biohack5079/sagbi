@@ -660,7 +660,7 @@ function saveOcrTextAsFile() {
 
 
 // --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
-async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null) {
+async function performLlmRequest(modelSelect, ragPrompt, apiKey, onChunk = null) {
     let result = '';
     let endpoint = '';
     let bodyData = {};
@@ -689,7 +689,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
                 console.log(`Trying Gemini model: ${modelVersion}`);
                 const currentEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelVersion}:generateContent?key=${apiKey}`;
                 const currentBody = {
-                    contents: [{ parts: [{ text: llmPrompt }] }],
+                    contents: [{ parts: [{ text: ragPrompt }] }],
                     generationConfig: { temperature: 0.1 }
                 };
 
@@ -738,10 +738,9 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
         // 利用するモデルIDを固定（google/gemma-2-9b-it）
         const modelId = "google/gemma-2-9b-it";
         
-        // モデル固有のエンドポイントを使用します。
-        // 共通エンドポイントでのCORSエラー（Status 200なのにヘッダー不足で遮断）を回避するため、
-        // 推論APIの標準的な形式に変更し、ヘッダーで待機フラグを明示します。
-        const hfEndpoint = `https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`;
+        // OpenAI互換のグローバルエンドポイントを使用します。
+        // モデル固有パスでのCORSエラーを回避するため、標準的なエンドポイントに変更します。
+        const hfEndpoint = `https://api-inference.huggingface.co/v1/chat/completions`;
 
         const response = await fetch(hfEndpoint, {
             method: 'POST',
@@ -749,13 +748,14 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
             credentials: 'omit',
             headers: {
                 'Authorization': `Bearer ${hfToken.trim()}`,
-                'Content-Type': 'application/json',
-                'x-wait-for-model': 'true'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                messages: [{ role: "user", content: llmPrompt }],
+                model: modelId,
+                messages: [{ role: "user", content: ragPrompt }],
                 max_tokens: 2048,
-                stream: true
+                stream: true,
+                wait_for_model: true
             })
         });
 
@@ -793,7 +793,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
     } else if (isSarasinaModel) {
         // --- Sarasina Model ---
         endpoint = 'http://localhost:8001/api/sarasina';
-        bodyData = { model: modelSelect, prompt: llmPrompt, temperature: 0.1 };
+        bodyData = { model: modelSelect, prompt: ragPrompt, temperature: 0.1 };
         
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -815,7 +815,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
 
         bodyData = {
             model: modelSelect,
-            prompt: llmPrompt,
+            prompt: ragPrompt,
             stream: true,
             options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
         };
@@ -912,7 +912,7 @@ async function sendToModel() {
 
     // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
     // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
-    const finalPrompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
+    const ragPrompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
 
 IMPORTANT INSTRUCTIONS:
 1.  **Answer in the same language as the user's [Question].** (If the question is in Japanese, answer in Japanese. If in English, answer in English).
@@ -929,7 +929,7 @@ ${userInput}`;
     // --- 回答生成 ---
     try {
         // 共通関数を使ってリクエスト
-        const finalResult = await performLlmRequest(modelSelect, finalPrompt, geminiApiKey, (chunkText) => {
+        const finalResult = await performLlmRequest(modelSelect, ragPrompt, geminiApiKey, (chunkText) => {
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
