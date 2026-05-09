@@ -665,6 +665,7 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
     
     const isGeminiCloudModel = modelSelect.toLowerCase().startsWith('gemini');
     const isSarasinaModel = modelSelect.toLowerCase().includes('sarasina');
+    const isHfCloudModel = modelSelect === 'huggingface';
     
     if (isGeminiCloudModel) {
         // --- Gemini Cloud Model ---
@@ -723,6 +724,58 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
         if (onChunk) onChunk(result);
         return result;
 
+    } else if (isHfCloudModel) {
+        // --- Hugging Face Inference API (Cloud) ---
+        const hfToken = localStorage.getItem('plowerHfToken');
+        if (!hfToken) throw new Error(isEn ? "Hugging Face Access Token is required for Cloud API." : "クラウドAPIを利用するにはHugging Face Access Tokenが必要です。");
+
+        // 利用するモデルIDを入力させる（デフォルトは高性能なGemma 2）
+        const modelId = prompt(isEn ? "Enter Hugging Face Model ID (e.g., google/gemma-2-9b-it):" : "Hugging FaceのモデルIDを入力してください (例: google/gemma-2-9b-it):", "google/gemma-2-9b-it");
+        if (!modelId) throw new Error("Model ID is required.");
+
+        const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${hfToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: modelId,
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 2048,
+                stream: true
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HF Inference API Error: ${response.status} ${errText}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                    const data = line.trim().slice(6);
+                    if (data === '[DONE]') break;
+                    try {
+                        const json = JSON.parse(data);
+                        const delta = json.choices[0].delta?.content;
+                        if (delta) {
+                            result += delta;
+                            if (onChunk) onChunk(result);
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+        return result;
+
     } else if (isSarasinaModel) {
         // --- Sarasina Model ---
         endpoint = 'http://localhost:8001/api/sarasina';
@@ -742,12 +795,12 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
 
     } else {
         // --- Ollama Model ---
-        let ollamaBaseUrl = localStorage.getItem('plowerOllamaEndpoint') || 'http://localhost:11434';
-        if (ollamaBaseUrl.endsWith('/')) ollamaBaseUrl = ollamaBaseUrl.slice(0, -1);
-        endpoint = ollamaBaseUrl.endsWith('/api/generate') ? ollamaBaseUrl : `${ollamaBaseUrl}/api/generate`;
+        let hfUrl = localStorage.getItem('plowerHfUrl') || 'http://localhost:11434';
+        if (hfUrl.endsWith('/')) hfUrl = hfUrl.slice(0, -1);
+        endpoint = hfUrl.endsWith('/api/generate') ? hfUrl : `${hfUrl}/api/generate`;
 
         bodyData = {
-            model: modelSelect, 
+            model: modelSelect,
             prompt: prompt,
             stream: true,
             options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
@@ -760,9 +813,17 @@ async function performLlmRequest(modelSelect, prompt, apiKey, onChunk = null) {
 // Ollamaストリーミング処理のヘルパー
 async function fetchOllamaStream(endpoint, bodyData, onChunk) {
     let result = '';
+    const hfToken = localStorage.getItem('plowerHfToken');
+    const headers = { 'Content-Type': 'application/json' };
+    
+    // Hugging Face Space等へのアクセス用に認証トークンを付与
+    if (hfToken) {
+        headers['Authorization'] = `Bearer ${hfToken}`;
+    }
+
     const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(bodyData)
     });
 
@@ -773,7 +834,7 @@ async function fetchOllamaStream(endpoint, bodyData, onChunk) {
 
     if (!response.ok) {
         if (response.status === 404) throw new Error(`Model '${bodyData.model}' not found.`);
-        if (response.status === 403) throw new Error(`Access Forbidden (403). Check OLLAMA_ORIGINS.`);
+        if (response.status === 403) throw new Error(`Access Forbidden (403). Check Hugging Face Token or OLLAMA_ORIGINS.`);
         throw new Error(`Ollama Error: ${response.status} ${response.statusText}`);
     }
 
@@ -809,7 +870,7 @@ async function sendToModel() {
     const chatLog = document.getElementById('chatLog');
     const sendButton = document.getElementById('sendButton');
     const modelSelect = document.getElementById('modelSelect').value;
-    const apiKey = document.getElementById('geminiApiKey').value.trim();
+    const geminiApiKey = document.getElementById('geminiApiKey').value.trim();
 
     if (!userInput) {
         alert(isEn ? "Please enter a question." : "質問を入力してください。");
@@ -854,7 +915,7 @@ ${userInput}`;
     // --- 回答生成 ---
     try {
         // 共通関数を使ってリクエスト
-        const finalResult = await performLlmRequest(modelSelect, prompt, apiKey, (chunkText) => {
+        const finalResult = await performLlmRequest(modelSelect, prompt, geminiApiKey, (chunkText) => {
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
@@ -922,15 +983,45 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     saveKeyBtn.parentNode.insertBefore(deleteKeyBtn, saveKeyBtn.nextSibling);
     
-    // --- Ollama URL設定の初期化とイベントリスナー ---
-    const ollamaInput = document.getElementById('ollamaUrlInput');
-    ollamaInput.value = localStorage.getItem('plowerOllamaEndpoint') || 'http://localhost:11434';
+    // --- Hugging Face Access Token のロードと保存処理 ---
+    const savedHfToken = localStorage.getItem('plowerHfToken');
+    if (savedHfToken) {
+        document.getElementById('hfToken').value = savedHfToken;
+    }
 
-    const saveOllamaBtn = document.getElementById('saveOllamaUrlButton');
-    saveOllamaBtn.addEventListener('click', () => {
-        let url = ollamaInput.value.trim();
+    const saveHfTokenBtn = document.getElementById('saveHfTokenButton');
+    if (saveHfTokenBtn) {
+        saveHfTokenBtn.addEventListener('click', () => {
+            const token = document.getElementById('hfToken').value.trim();
+            if (token) {
+                localStorage.setItem('plowerHfToken', token);
+                alert(isEn ? 'HuggingFace Token saved.' : 'HuggingFace Access Tokenを保存しました。');
+            }
+        });
+
+        // トークン削除ボタンの追加
+        const deleteHfTokenBtn = document.createElement('button');
+        deleteHfTokenBtn.textContent = isEn ? 'Delete Token' : 'トークン削除';
+        deleteHfTokenBtn.style.marginLeft = '5px';
+        deleteHfTokenBtn.addEventListener('click', () => {
+            localStorage.removeItem('plowerHfToken');
+            document.getElementById('hfToken').value = '';
+            alert(isEn ? 'HuggingFace Token deleted.' : '保存されたHuggingFaceトークンを削除しました。');
+        });
+        saveHfTokenBtn.parentNode.insertBefore(deleteHfTokenBtn, saveHfTokenBtn.nextSibling);
+    }
+
+    // --- HuggingFace URL設定の初期化とイベントリスナー ---
+    const hfUrlInput = document.getElementById('hfUrlInput');
+    if (hfUrlInput) {
+        hfUrlInput.value = localStorage.getItem('plowerHfUrl') || 'http://localhost:11434';
+    }
+
+    const saveHfUrlBtn = document.getElementById('saveHfUrlButton');
+    saveHfUrlBtn.addEventListener('click', () => {
+        let url = hfUrlInput.value.trim();
         if (!url) url = 'http://localhost:11434';
-        let finalMessage = isEn ? 'Ollama URL saved.' : 'OllamaのURL設定を保存しました。';
+        let finalMessage = isEn ? 'HuggingFace URL saved.' : 'HuggingFaceのURL設定を保存しました。';
         
         // Hugging Face SpacesのWeb URLが入力された場合、Direct URLに自動変換する
         // 例: https://huggingface.co/spaces/username/spacename -> https://username-spacename.hf.space
@@ -939,24 +1030,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const username = hfMatch[1].toLowerCase();
             const spacename = hfMatch[2].toLowerCase();
             url = `https://${username}-${spacename}.hf.space`;
-            ollamaInput.value = url; // 入力欄も更新
+            hfUrlInput.value = url; // 入力欄も更新
             finalMessage = isEn ? 'Converted Hugging Face Space URL to Direct URL format and saved.' : 'Hugging Face SpaceのWeb URLを検出し、API用のDirect URL形式に自動変換して保存しました。';
         }
         
-        localStorage.setItem('plowerOllamaEndpoint', url);
+        localStorage.setItem('plowerHfUrl', url);
         alert(finalMessage);
     });
 
-    // Ollama URL削除ボタンを動的に追加
-    const deleteOllamaBtn = document.createElement('button');
-    deleteOllamaBtn.textContent = isEn ? 'Delete URL' : 'URL削除';
-    deleteOllamaBtn.style.marginLeft = '5px';
-    deleteOllamaBtn.addEventListener('click', () => {
-        localStorage.removeItem('plowerOllamaEndpoint');
-        ollamaInput.value = 'http://localhost:11434';
-        alert(isEn ? 'Saved Ollama URL deleted (Reset to default).' : '保存されたOllama URLを削除しました（デフォルトに戻りました）。');
+    // HuggingFace URL削除ボタンを動的に追加
+    const deleteHfUrlBtn = document.createElement('button');
+    deleteHfUrlBtn.textContent = isEn ? 'Delete URL' : 'URL削除';
+    deleteHfUrlBtn.style.marginLeft = '5px';
+    deleteHfUrlBtn.addEventListener('click', () => {
+        localStorage.removeItem('plowerHfUrl');
+        if (hfUrlInput) hfUrlInput.value = 'http://localhost:11434';
+        alert(isEn ? 'Saved HuggingFace URL deleted (Reset to default).' : '保存されたHuggingFace URLを削除しました（デフォルトに戻りました）。');
     });
-    saveOllamaBtn.parentNode.insertBefore(deleteOllamaBtn, saveOllamaBtn.nextSibling);
+    saveHfUrlBtn.parentNode.insertBefore(deleteHfUrlBtn, saveHfUrlBtn.nextSibling);
 
     // Enterキーでの送信機能
     document.getElementById('userInput').addEventListener('keypress', function(e) {

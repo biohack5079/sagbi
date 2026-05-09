@@ -47,21 +47,26 @@
     </div>
 
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-        <label for="ollamaUrlInput">Ollama URL (Default: localhost):</label>
-        <input type="text" id="ollamaUrlInput" placeholder="http://localhost:11434 or your Hugging Face URL" style="width: 300px;">
-        <button id="saveOllamaUrlButton">URL保存</button>
+        <label for="hfUrlInput">HuggingFace / Ollama URL:</label>
+        <input type="text" id="hfUrlInput" placeholder="http://localhost:11434 or https://user-space.hf.space" style="width: 300px;">
+        <button id="saveHfUrlButton">URL保存</button>
+    </div>
+
+    <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
+        <label for="hfToken">HuggingFace Access Token (Read):</label>
+        <input type="password" id="hfToken" placeholder="hf_..." style="width: 300px;">
+        <button id="saveHfTokenButton">トークン保存</button>
     </div>
 
     <label for="modelSelect">モデル選択:</label>
     <select id="modelSelect">
-        <option value="gemma:7b">Gemma 7B (Ollama)</option>
-        <option value="gpt-oss:20b">GPT-OSS 20B (Ollama)</option>
-        <option value="gemma3:12b">Gemma 12B (Ollama)</option>
-        <option value="gpt-oss:120b">GPT-OSS 120B (Ollama)</option>
-
-        <option value="sarasina">Sarasina (SoftBank/Ollama)</option>
-        <option value="gemini-flash" selected>Gemini API Flash (クラウド)</option>
-        <option value="gemini-pro">Gemini API Pro (クラウド)</option>
+        <option value="gemma:7b">Gemma 7B (ローカル)</option>
+        <option value="gpt-oss:20b">GPT-OSS 20B (ローカル)</option>
+        <option value="gemma3:12b">Gemma 12B (ローカル)</option>
+        <option value="gpt-oss:120b">GPT-OSS 120B (ローカル)</option>
+        <option value="sarasina">Sarasina (SoftBank/ローカル)</option>
+        <option value="huggingface">HuggingFace (クラウド)</option>
+        <option value="gemini-flash" selected>Gemini API (クラウド)</option>
     </select>
     
     <button id="sendButton">送信</button>
@@ -87,8 +92,10 @@
                 modelLabel: 'Select Model:',
                 send: 'Send',
                 cloud: '(Cloud)',
-                ollamaUrlLabel: 'Ollama URL (Default: localhost):',
-                saveOllamaUrl: 'Save URL'
+                hfUrlLabel: 'HuggingFace / Ollama URL:',
+                saveHfUrl: 'Save URL',
+                hfTokenLabel: 'HuggingFace Access Token:',
+                saveHfToken: 'Save Token'
             };
 
             document.title = t.title;
@@ -106,8 +113,10 @@
             document.querySelector('label[for="geminiApiKey"]').textContent = t.keyLabel;
             document.getElementById('saveKeyButton').textContent = t.saveKey;
             document.querySelector('label[for="modelSelect"]').textContent = t.modelLabel;
-            document.querySelector('label[for="ollamaUrlInput"]').textContent = t.ollamaUrlLabel;
-            document.getElementById('saveOllamaUrlButton').textContent = t.saveOllamaUrl;
+            document.querySelector('label[for="hfUrlInput"]').textContent = t.hfUrlLabel;
+            document.getElementById('saveHfUrlButton').textContent = t.saveHfUrl;
+            document.querySelector('label[for="hfToken"]').textContent = t.hfTokenLabel;
+            document.getElementById('saveHfTokenButton').textContent = t.saveHfToken;
             document.getElementById('sendButton').textContent = t.send;
             
             const select = document.getElementById('modelSelect');
