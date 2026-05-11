@@ -498,34 +498,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const files = this.files;
             if (files.length === 0) return;
             
-            // ファイルの内容を読み込み、persistentDocuments に追加
-            const fileReads = Array.from(files).map(file => {
-                return new Promise((resolve, reject) => {
-                    if (file.size > 10 * 1024 * 1024) { // 10MB以上はスキップ
-                        alert(`ファイル「${file.name}」はサイズ制限（10MB）を超えているためスキップされました。`);
-                        return resolve();
-                    }
+            Array.from(files).forEach(file => {
+                if (file.size > 10 * 1024 * 1024) {
+                    alert(isEn ? `File "${file.name}" exceeds 10MB limit.` : `ファイル「${file.name}」はサイズ制限（10MB）を超えているためスキップされました。`);
+                    return;
+                }
+
+                if (file.type.startsWith('image/')) {
+                    processImageSource(file);
+                } else {
                     const reader = new FileReader();
                     reader.onload = function (e) {
-                        const newDoc = { name: file.name, content: e.target.result };
-                        persistentDocuments.push(newDoc);
-                        resolve();
+                        persistentDocuments.push({ name: file.name, content: e.target.result });
+                        saveDocuments();
+                        updateFileListDisplay();
                     };
-                    reader.onerror = reject;
                     reader.readAsText(file);
-                });
+                }
             });
-
-            Promise.all(fileReads.filter(p => p !== null))
-                .then(() => {
-                    saveDocuments();
-                    updateFileListDisplay();
-                    alert(`新しいファイル ${persistentDocuments.length - (persistentDocuments.length - files.length)} 件をRAGソースに追加しました。`);
-                })
-                .catch(error => {
-                    alert('ファイルの読み込み中にエラーが発生しました。');
-                    console.error("File reading error:", error);
-                });
             
             this.value = ''; // 連続アップロードのためにinputをクリア
         });
@@ -535,73 +525,95 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- 貼り付け画像処理のイベントリスナー (OCR連携ロジック) ---
 async function handlePaste(e) {
     const items = e.clipboardData.items;
-    let imageFound = false;
-    
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.type.indexOf('image') !== -1) {
             e.preventDefault(); 
             const blob = item.getAsFile();
-            const reader = new FileReader();
-            imageFound = true;
-            
-            // OCR結果は一旦クリア
-            ocrDocuments = [];
-            clearOcrDisplay();
-
-            // 処理中メッセージ表示要素 (ステータス表示用)
-            const processingMessage = document.createElement('p');
-            processingMessage.className = 'ocr-status';
-            processingMessage.textContent = '画像を貼り付けました。OCR処理を開始しています...';
-            const fileContentDiv = document.getElementById('fileContent');
-            fileContentDiv.prepend(processingMessage);
-
-            reader.onload = async function (event) {
-                const base64Image = event.target.result;
-                const imageName = `一時貼付画像_${Date.now()}`;
-                
-                // 画像をfileContentエリアに表示
-                const img = document.createElement('img');
-                img.src = base64Image;
-                img.alt = imageName;
-                fileContentDiv.prepend(img);
-                
-                try {
-                    // 1. OCR処理を実行 (詳細ステータスはprocessingMessageで更新される)
-                    const ocrText = await runOcrOnImage(base64Image, processingMessage);
-                    
-                    // 2. OCR結果を一時文書として保持
-                    const fullOcrContent = ocrText.trim(); 
-                    if (fullOcrContent) {
-                        ocrDocuments.push({
-                            name: imageName,
-                            content: fullOcrContent
-                        });
-                    }
-                    
-                    // 3. ステータス更新（最終メッセージ）
-                    if (fullOcrContent) {
-                        processingMessage.innerHTML = `✅ OCR処理完了: <strong>${imageName}</strong> のテキストがRAG対象に追加されました (一時保存)。<br>「保存」ボタンで永続化できます。`;
-                        processingMessage.style.color = 'green';
-                    } else {
-                        processingMessage.innerHTML = `⚠️ OCR処理完了: テキストを検出できませんでした。画像を削除するには「貼付けテキストを永続ファイルとして保存」するか、別の画像を貼り付けてください。`;
-                        processingMessage.style.color = 'brown';
-                    }
-                    
-                } catch (error) {
-                    processingMessage.innerHTML = `❌ OCR処理中にエラーが発生しました: ${error.message}`;
-                    processingMessage.style.color = 'red';
-                    console.error("OCR Error:", error);
-                } finally {
-                    document.getElementById('pasteArea').value = ''; // 貼り付けエリアをクリア
-                }
-            };
-            reader.readAsDataURL(blob);
+            processImageSource(blob);
             break;
         }
     }
-    
-    // 画像貼り付けではない場合は、テキスト貼り付けとして処理は継続される（pasteAreaに入る）
+}
+
+// --- 画像解析(OCR)とプレビュー・JPG保存処理 ---
+async function processImageSource(fileOrBlob) {
+    const isFile = fileOrBlob instanceof File;
+    const name = isFile ? fileOrBlob.name : `pasted_image_${Date.now()}.png`;
+    const fileContentDiv = document.getElementById('fileContent');
+
+    if (!isFile) {
+        ocrDocuments = [];
+        clearOcrDisplay();
+    }
+
+    const processingMessage = document.createElement('p');
+    processingMessage.className = 'ocr-status';
+    processingMessage.textContent = isEn ? `Analyzing ${name}...` : `画像を解析中: ${name}...`;
+    fileContentDiv.prepend(processingMessage);
+
+    const reader = new FileReader();
+    reader.onload = async function (event) {
+        const base64Image = event.target.result;
+
+        const container = document.createElement('div');
+        container.style.margin = "10px 0";
+        container.style.padding = "10px";
+        container.style.border = "1px solid #ddd";
+        container.style.borderRadius = "5px";
+        container.style.backgroundColor = "#fff";
+
+        const img = document.createElement('img');
+        img.src = base64Image;
+        img.style.maxWidth = '100%';
+        img.style.display = 'block';
+        img.style.marginBottom = '10px';
+        container.appendChild(img);
+
+        const dlBtn = document.createElement('button');
+        dlBtn.textContent = isEn ? 'Download as JPG' : 'JPGとして保存';
+        dlBtn.style.padding = "5px 15px";
+        
+        // JPG変換ロジック
+        const tempImg = new Image();
+        tempImg.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = tempImg.width;
+            canvas.height = tempImg.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(tempImg, 0, 0);
+            const jpegUrl = canvas.toDataURL('image/jpeg', 0.8);
+            dlBtn.onclick = () => {
+                const link = document.createElement('a');
+                link.href = jpegUrl;
+                link.download = name.split('.')[0] + ".jpg";
+                link.click();
+            };
+        };
+        tempImg.src = base64Image;
+
+        container.appendChild(dlBtn);
+        fileContentDiv.prepend(container);
+
+        try {
+            const ocrText = await runOcrOnImage(base64Image, processingMessage);
+            const fullOcrContent = ocrText.trim();
+            if (fullOcrContent) {
+                ocrDocuments.push({ name: name, content: fullOcrContent });
+                processingMessage.innerHTML = `✅ ${isEn ? 'OCR Complete' : '解析完了'}: <strong>${name}</strong>`;
+                processingMessage.style.color = 'green';
+            } else {
+                processingMessage.innerHTML = `⚠️ ${isEn ? 'No text detected' : 'テキストを検出できませんでした'}: ${name}`;
+                processingMessage.style.color = 'orange';
+            }
+        } catch (error) {
+            processingMessage.innerHTML = `❌ OCR Error: ${error.message}`;
+            processingMessage.style.color = 'red';
+        } finally {
+            document.getElementById('pasteArea').value = '';
+        }
+    };
+    reader.readAsDataURL(fileOrBlob);
 }
 
 // --- OCR/貼付テキストのファイル保存と永続化 ---
