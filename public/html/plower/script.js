@@ -1,8 +1,8 @@
 // 永続化された文書を格納 (LocalStorageからロード)
 let persistentDocuments = []; 
 
-// 現在解析対象となっている画像データ (Base64)
-let currentImageBase64 = null;
+// 貼り付けられた画像データの配列 [{id, data, name}]
+let pastedImages = [];
 
 // 言語設定の判定 (日本語以外なら英語モード)
 const isEn = !navigator.language.startsWith('ja');
@@ -43,6 +43,18 @@ async function loadDocuments() {
                 request.onsuccess = () => resolve(request.result || []);
                 request.onerror = () => resolve([]);
             });
+
+            // ディレクトリハンドルの復元
+            const dirReq = store.get("plowerDirHandle");
+            directoryHandle = await new Promise((resolve) => {
+                dirReq.onsuccess = () => resolve(dirReq.result || null);
+                dirReq.onerror = () => resolve(null);
+            });
+            
+            if (directoryHandle) {
+                // ハンドルがあれば自動同期タイマーを再開（権限は後でクリック時に要求）
+                syncInterval = setInterval(() => loadFilesFromDirectory(true), 10000);
+            }
         }
         updateFileListDisplay();
     } catch (e) {
@@ -56,14 +68,27 @@ async function saveDocuments() {
     try {
         const db = await openDB();
         return new Promise((resolve, reject) => {
-            // .txtファイルのみ内容を保存し、それ以外（画像や他形式）は名前のみ保持して容量を節約
+            // .txtファイルのみ内容を保存し、それ以外は名前のみ保持してIndexedDBの肥大化を防ぐ
             const docsToPersist = persistentDocuments.map(doc => ({
                 name: doc.name,
                 content: doc.name.toLowerCase().endsWith('.txt') ? doc.content : ""
             }));
+
             const tx = db.transaction(storeName, "readwrite");
             const store = tx.objectStore(storeName);
-            const request = store.put(docsToPersist, "plowerRAGDocs");
+
+            // 文書リストの保存
+            store.put(docsToPersist, "plowerRAGDocs");
+            
+            // フォルダハンドルの保存（シリアライズ可能なブラウザのみ）
+            if (directoryHandle) {
+                try {
+                    store.put(directoryHandle, "plowerDirHandle");
+                } catch (e) {
+                    console.warn("Failed to serialize directoryHandle to IDB:", e);
+                }
+            }
+
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
@@ -103,6 +128,8 @@ async function resetDocuments() {
 
             // 同期設定のクリア
             directoryHandle = null;
+            const store = tx.objectStore(storeName);
+            store.delete("plowerDirHandle");
             if (syncInterval) clearInterval(syncInterval);
 
             // UIを更新
@@ -154,9 +181,11 @@ function updateFileListDisplay() {
 
         li.title = doc.name; // ホバーでフルネームを表示
         li.dataset.docIndex = index;
-        li.onclick = () => {
+        li.onclick = async (e) => {
+            // 選択状態のUIフィードバック（任意）
             showDocumentContent(index);
         };
+
         // 右クリックメニュー (コンテキストメニュー) の追加
         li.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -171,10 +200,12 @@ function updateFileListDisplay() {
     
     if (recentDocs.length > 0) {
         recentDocs.forEach(doc => {
+            const isImage = doc.name.match(/\.(png|jpg|jpeg|webp|gif)$/i) || doc.content.startsWith('data:image/');
             initialContent += `<p><strong>【${doc.name}】</strong></p>`;
-            if (doc.content.startsWith('data:image/')) {
-                // 画像の場合はサムネイルを表示
-                initialContent += `<div style="margin-bottom:10px;"><img src="${doc.content}" style="max-width:200px; max-height:150px; border:1px solid #ccc; border-radius:4px;"></div>`;
+            if (isImage) {
+                // 内容が空（再読み込み後かつ同期前）でも画像枠を表示
+                const imgSrc = doc.content || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+                initialContent += `<div style="margin-bottom:10px;"><img src="${imgSrc}" alt="${doc.name}" style="max-width:200px; max-height:150px; border:1px solid #ccc; border-radius:4px; background: #eee; opacity: ${doc.content ? 1 : 0.5};"></div>`;
             } else {
                 // テキストの場合は内容の一部を表示
                 initialContent += `<pre>--- ${isEn ? 'File Name' : 'ファイル名'}: ${doc.name} ---\n${doc.content.slice(0, 300)}${doc.content.length > 300 ? '...' : ''}</pre>\n`;
@@ -214,30 +245,46 @@ async function showDocumentContent(index) {
     let displayContent = doc.content;
     let isImage = doc.name.match(/\.(png|jpg|jpeg|webp|gif)$/i) || doc.content.startsWith('data:image/');
 
-    // 同期フォルダが設定されている場合、実体を確認
-    if (directoryHandle) {
+    // 1. 同期フォルダの権限確認（API対応ブラウザのみ）
+    let hasDirectoryPermission = false;
+    if (directoryHandle && window.showDirectoryPicker) {
+        const options = { mode: 'readwrite' };
+        if ((await directoryHandle.queryPermission(options)) === 'granted') {
+            hasDirectoryPermission = true;
+        }
+    }
+
+    // 2. 同期フォルダが有効なら実体（最新化）を試みる
+    if (hasDirectoryPermission) {
         const fileHandle = await getFileHandleByPath(doc.name);
         
         if (!fileHandle) {
-            // 実体が無かったらRAGソース一覧から削除
+            // クリック時に実体が無かったら、RAGソース一覧から削除
             console.warn(`File missing locally: ${doc.name}`);
-            persistentDocuments.splice(index, 1);
+            persistentDocuments.splice(index, 1); 
             await saveDocuments();
             updateFileListDisplay();
-            return;
+            fileContentDiv.innerHTML = `<p style="color:red;">${isEn ? 'File not found locally.' : 'ローカルにファイルが見つかりません。'}</p>`;
+            return; // 処理中断
         }
 
         // 実体がある場合、最新の内容を読み込む（IndexedDBの古いキャッシュではなく実体優先）
         try {
             const file = await fileHandle.getFile();
             if (isImage) {
-                displayContent = await new Promise((resolve) => {
+                displayContent = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
+                    reader.onload = (e) => {
+                        // メモリ上のデータを更新して表示を安定させる
+                        doc.content = e.target.result;
+                        resolve(e.target.result);
+                    };
+                    reader.onerror = reject;
                     reader.readAsDataURL(file);
                 });
             } else if (doc.name.toLowerCase().endsWith('.txt')) {
                 displayContent = await file.text();
+                doc.content = displayContent; // メモリ更新
             } else {
                 displayContent = isEn ? "(Non-text file. Name only.)" : "(テキスト以外のファイル。名前のみ登録されています。)";
             }
@@ -246,7 +293,27 @@ async function showDocumentContent(index) {
         }
     }
 
-    // 表示処理
+    // 3. 実体が読み込めない（再読み込み後やモバイル）場合の修復UI
+    if (!displayContent || (isImage && !displayContent.startsWith('data:image/'))) {
+        let fallbackHtml = `<h3>${doc.name}</h3>`;
+        
+        if (window.showDirectoryPicker) {
+            // PC環境（API対応）
+            fallbackHtml += `<p style="color:red;">${isEn ? "Sync lost. Please re-link folder or re-upload file." : "ローカルとの同期が切れています。フォルダを再選択するか、ファイルを再指定してください。"}</p>`;
+            fallbackHtml += `<button onclick="syncLocalFolder()" style="padding:10px; cursor:pointer; width:100%; margin-bottom:10px;">${isEn ? 'Re-link Sync Folder' : '同期フォルダを再選択'}</button>`;
+        } else {
+            // スマホ環境（API非対応）
+            fallbackHtml += `<p style="color:orange;">${isEn ? "Content missing. Please re-upload this file to view." : "内容が保持されていません。表示するにはファイルを再アップロードしてください。"}</p>`;
+        }
+        
+        fallbackHtml += `<p>${isEn ? 'Manually re-upload this file:' : 'このファイルを手動で再読み込み:'}</p>`;
+        fallbackHtml += `<input type="file" onchange="repairFileContent(${index}, this)" style="width:100%;">`;
+        
+        fileContentDiv.innerHTML = fallbackHtml;
+        return;
+    }
+
+    // 4. 正常表示
     let contentHtml = `<h3>${isEn ? 'Selected File' : '選択中のファイル'}: ${doc.name}</h3>`;
     if (isImage && displayContent.startsWith('data:image/')) {
         contentHtml += `<img src="${displayContent}" style="max-width:100%; border:1px solid #ddd; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">`;
@@ -254,6 +321,35 @@ async function showDocumentContent(index) {
         contentHtml += `<pre>${displayContent || (isEn ? "No content available." : "内容がありません。")}</pre>`;
     }
     fileContentDiv.innerHTML = contentHtml;
+}
+
+// --- ファイルの手動再アップロードによる修復 ---
+async function repairFileContent(index, input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const doc = persistentDocuments[index];
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            doc.content = e.target.result;
+            await saveDocuments();
+            showDocumentContent(index);
+        };
+        reader.readAsDataURL(file);
+    } else {
+        doc.content = await file.text();
+        await saveDocuments();
+        showDocumentContent(index);
+    }
+}
+
+// ディレクトリの権限を確認・要求するヘルパー
+async function verifyDirectoryPermission(handle) {
+    const options = { mode: 'readwrite' };
+    if ((await handle.queryPermission(options)) === 'granted') return true;
+    if ((await handle.requestPermission(options)) === 'granted') return true;
+    return false;
 }
 
 // --- コンテキストメニュー (右クリック) 関連 ---
@@ -307,6 +403,13 @@ function createContextMenu(e, index) {
 }
 
 function renameDocument(index) {
+    // 操作前に権限チェック
+    if (directoryHandle) {
+        verifyDirectoryPermission(directoryHandle).then(granted => {
+            if (!granted) alert(isEn ? "Permission required to rename file." : "ファイル名を変更するには権限の許可が必要です。");
+        });
+    }
+
     const doc = persistentDocuments[index];
     
     // カスタムダイアログを作成 (promptでは選択範囲の制御ができないため)
@@ -373,6 +476,7 @@ function renameDocument(index) {
             doc.name = newName;
             await saveDocuments();
             updateFileListDisplay();
+            alert(isEn ? "Renamed in list. Please manually rename the local file if sync failed." : "リスト上の名前を変更しました。同期に失敗した場合は、ローカルファイルも手動でリネームしてください。");
         }
         closeDialog();
     };
@@ -453,7 +557,6 @@ let syncInterval = null;
 // ローカルフォルダと同期する関数
 async function syncLocalFolder() {
     if (!('showDirectoryPicker' in window)) {
-        alert(isEn ? 'Your browser does not support File System Access API.' : 'お使いのブラウザはローカルフォルダ同期(File System Access API)をサポートしていません。PC版ChromeやEdgeをご利用ください。');
         return;
     }
 
@@ -462,19 +565,15 @@ async function syncLocalFolder() {
 
     try {
         // ユーザーにフォルダを選択させる
-        const handle = await window.showDirectoryPicker({ mode: 'read' });
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
         directoryHandle = handle;
+        await saveDocuments(); // ハンドルをIndexedDBに保存
         
-        const msg = isEn 
-            ? `Start syncing with folder "${handle.name}"?\nFiles in this folder will be automatically synced.`
-            : `フォルダ「${handle.name}」と同期を開始しますか？\nこのフォルダ内のファイルは自動的に同期（追加・更新）されます。`;
-
-        if (confirm(msg)) {
-            // 初回読み込み (UI表示あり)
-            await loadFilesFromDirectory(false);
-            // 自動同期タイマーを開始 (10秒ごとにチェック)
-            syncInterval = setInterval(() => loadFilesFromDirectory(true), 10000);
-        }
+        // 初回読み込み (UI表示あり)
+        await loadFilesFromDirectory(false);
+        // 自動同期タイマーを開始 (10秒ごとにチェック)
+        if (syncInterval) clearInterval(syncInterval);
+        syncInterval = setInterval(() => loadFilesFromDirectory(true), 10000);
 
     } catch (err) {
         if (err.name !== 'AbortError') {
@@ -487,6 +586,26 @@ async function syncLocalFolder() {
 // 選択されたディレクトリからファイルを読み込む関数
 async function loadFilesFromDirectory(isSilent = false) {
     if (!directoryHandle) return;
+
+    // 権限チェック
+    const options = { mode: 'readwrite' };
+    const currentPerm = await directoryHandle.queryPermission(options);
+
+    // 自動同期(isSilent)時は、権限がない(prompt)なら何もしない（勝手にダイアログを出せないため）
+    if (isSilent && currentPerm !== 'granted') {
+        return;
+    }
+
+    // 手動クリック時は、権限がなければ要求する
+    if (!isSilent && currentPerm !== 'granted') {
+        const granted = await verifyDirectoryPermission(directoryHandle);
+        if (!granted) return;
+    }
+
+    // 最終確認: 権限がないまま進むと scannedDocNames が空になり、全削除されるリスクがあるためガード
+    if ((await directoryHandle.queryPermission(options)) !== 'granted') {
+        return;
+    }
 
     const fileContentDiv = document.getElementById('fileContent');
     
@@ -506,7 +625,7 @@ async function loadFilesFromDirectory(isSilent = false) {
                 scannedDocNames.add(fullPath); // 見つかったすべてのパスを記録
 
                 if (entry.kind === 'file') {
-                    const isTxt = entry.name.toLowerCase().endsWith('.txt');
+                    const isTxt = fullPath.toLowerCase().endsWith('.txt');
                     const isImage = /\.(png|jpg|jpeg|webp|gif)$/i.test(entry.name);
                     
                     if (isTxt || isImage) {
@@ -526,7 +645,7 @@ async function loadFilesFromDirectory(isSilent = false) {
                             }
                             scannedDocs.push({ name: fullPath, content: content });
                         } catch (e) {
-                            console.warn(`Skipped file: ${entry.name}`, e);
+                            console.warn(`Skipped file: ${fullPath}`, e);
                         }
                     } else {
                         // それ以外のファイルは名前のみリストに追加
@@ -569,18 +688,15 @@ async function loadFilesFromDirectory(isSilent = false) {
         removedCount = originalLength - persistentDocuments.length;
         if (removedCount > 0) changesMade = true;
 
-        if (changesMade) {
-            await saveDocuments(); // IndexedDBに保存
-            updateFileListDisplay(); // ファイル一覧を更新
-            
-            if (!isSilent) {
-                alert(isEn 
-                    ? `Synced: ${addedCount} added, ${updatedCount} updated, ${removedCount} removed.` 
-                    : `同期完了: ${addedCount}件追加、${updatedCount}件更新、${removedCount}件削除されました。`);
-            } else {
-                console.log(`Auto-sync: Added ${addedCount}, Updated ${updatedCount}, Removed ${removedCount}`);
-            }
-        } else {
+        // 同期完了時は必ず保存（DBには名前のみ、メモリには内容を保持）
+        await saveDocuments();
+        updateFileListDisplay();
+
+        if (changesMade && !isSilent) {
+            alert(isEn 
+                ? `Synced: ${addedCount} added, ${updatedCount} updated, ${removedCount} removed.` 
+                : `同期完了: ${addedCount}件追加、${updatedCount}件更新、${removedCount}件削除されました。`);
+        } else if (!isSilent) {
             if (!isSilent) {
                 alert(isEn ? "Files are up to date." : "ファイルの内容は最新です。");
                 updateFileListDisplay(); // 表示を復元
@@ -635,182 +751,158 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- 貼り付け画像処理のイベントリスナー (OCR連携ロジック) ---
 async function handlePaste(e) {
-    const items = e.clipboardData.items;
+    const items = (e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData)).items;
+    if (!items) return;
+
+    let imageDetected = false;
     for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.type.indexOf('image') !== -1) {
-            e.preventDefault(); 
-            const blob = item.getAsFile();
-            processImageSource(blob);
-            break;
+        if (items[i].type.indexOf('image') !== -1) {
+            const blob = items[i].getAsFile();
+            if (blob) {
+                imageDetected = true;
+                // 非同期だが順番に処理
+                processImageSource(blob);
+            }
         }
+    }
+
+    if (imageDetected) {
+        e.preventDefault();
     }
 }
 
 // --- 画像プレビューとPNG保存準備処理 ---
 async function processImageSource(fileOrBlob) {
-    const isFile = fileOrBlob instanceof File;
-    const name = isFile ? fileOrBlob.name : `pasted_image_${Date.now()}.png`;
+    const now = new Date();
+    const pad = (num) => num.toString().padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
-    // 1. 貼り付けた瞬間にまず保存するか確認する
+    const isFile = fileOrBlob instanceof File;
+    let name = isFile ? fileOrBlob.name : `plower_image_${timestamp}.png`;
+    
+    // genericな名前（image.pngやblob）はタイムスタンプ付きに強制変換
+    if (name === "image.png" || name === "blob") {
+        name = `plower_image_${timestamp}.png`;
+    }
+
+    const pastePreview = document.getElementById('pastePreview');
+    
+    // 1. 画像を読み込んでプレビューを表示
+    const base64Image = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsDataURL(fileOrBlob);
+    });
+
+    const imageId = Date.now() + Math.random();
+    pastedImages.push({ id: imageId, data: base64Image, name: name });
+
+    // 2. プレビュー表示の生成
+    const wrapper = document.createElement('div');
+    wrapper.id = `preview-${imageId}`;
+    wrapper.style.position = 'relative';
+    wrapper.style.display = 'inline-block';
+    wrapper.style.margin = '10px 10px 0 0';
+
+    const thumb = document.createElement('img');
+    thumb.src = base64Image;
+    thumb.style.height = '80px';
+    thumb.style.borderRadius = '4px';
+    thumb.style.border = '1px solid #ccc';
+
+    const closeBtn = document.createElement('div');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.position = 'absolute';
+    closeBtn.style.top = '-5px';
+    closeBtn.style.right = '-5px';
+    closeBtn.style.width = '20px';
+    closeBtn.style.height = '20px';
+    closeBtn.style.background = 'rgba(255,0,0,0.8)';
+    closeBtn.style.color = 'white';
+    closeBtn.style.borderRadius = '50%';
+    closeBtn.style.textAlign = 'center';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.lineHeight = '18px';
+    closeBtn.onclick = () => {
+        pastedImages = pastedImages.filter(p => p.id !== imageId);
+        wrapper.remove();
+    };
+
+    wrapper.appendChild(thumb);
+    wrapper.appendChild(closeBtn);
+    if (pastePreview) pastePreview.appendChild(wrapper);
+
+    // 3. RAGソースへの保存を確認（ここで await することでダイアログが順番に出るようにする）
     const willPersist = confirm(isEn 
         ? `Image "${name}" detected. Save this image to RAG source?` 
-        : `画像「${name}」を検出しました。この画像をRAGソース（永続ファイル）に保存しますか？`);
+        : `画像「${name}」を検出しました。この画像をRAGソースに保存しますか？`);
 
-    const fileContentDiv = document.getElementById('fileContent');
-
-    const reader = new FileReader();
-    reader.onload = async function (event) {
-        const base64Image = event.target.result;
-        const container = document.createElement('div');
-        container.style.margin = "10px 0";
-        container.style.padding = "10px";
-        container.style.border = "1px solid #ddd";
-        container.style.borderRadius = "5px";
-        container.style.backgroundColor = "#fff";
-
-        const img = document.createElement('img');
-        img.src = base64Image;
-        img.style.maxWidth = '100%';
-        img.style.display = 'block';
-        img.style.marginBottom = '10px';
-        container.appendChild(img);
-
-        const dlBtn = document.createElement('button');
-        dlBtn.textContent = isEn ? 'Download as PNG' : 'PNGとして保存';
-        dlBtn.style.padding = "5px 15px";
-        
-        // JPG変換ロジック
-        const tempImg = new Image();
-        tempImg.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = tempImg.width;
-            canvas.height = tempImg.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(tempImg, 0, 0);
-            
-            // LLM送信用およびプレビュー用 (PNGに統一)
-            const pngUrl = canvas.toDataURL('image/png');
-            dlBtn.onclick = () => {
-                const link = document.createElement('a');
-                link.href = pngUrl;
-                link.download = name.replace(/\.[^/.]+$/, "") + ".png";
-                link.click();
-            };
-            currentImageBase64 = pngUrl; // LLM送信用に保持
-
-            // 最初にOKを押していた場合は、準備ができ次第リネーム・保存プロセスへ
-            if (willPersist) {
-                saveCurrentContentAsFile();
-            }
-        };
-        tempImg.src = base64Image;
-
-        container.appendChild(dlBtn);
-        fileContentDiv.prepend(container);
-    };
-    reader.readAsDataURL(fileOrBlob);
+    if (willPersist) {
+        try {
+            await saveSingleFile('image', base64Image, name);
+            await saveDocuments(); // IndexedDBには名前だけ、フォルダには実体を保存
+            updateFileListDisplay();
+            // 永続化したので一時リスト(プレビュー)から削除
+            pastedImages = pastedImages.filter(p => p.id !== imageId);
+            wrapper.remove();
+        } catch (e) {
+            console.error("Save failed:", e);
+        }
+    }
 }
 
 // --- 貼付画像・テキストのファイル保存と永続化 ---
+async function saveCurrentContentAsFile(specificName = null) {
+    if (specificName instanceof Event) specificName = null;
 
-async function saveCurrentContentAsFile() {
     const pasteAreaContent = document.getElementById('pasteArea').value.trim();
     const now = new Date();
     const pad = (num) => num.toString().padStart(2, '0');
     const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     
-    let contentToSave = '';
-    let filename = '';
-    let fileBlob = null;
-
-    // 1. 名前決定（同期フォルダがあるためダイアログはスキップ）
-    filename = currentImageBase64 ? `plower_image_${timestamp}.png` : `plower_memo_${timestamp}.txt`;
-
-    // 2. データ生成プロセス
-    if (currentImageBase64) {
-        // 注意喚起
-        alert(isEn ? "Saving image locally. This file will be referenced from now on." : "保存しました。以降そこが参照されます。");
-
-        const tempImg = new Image();
-        try {
-            await new Promise((resolve, reject) => { 
-                tempImg.onload = resolve; 
-                tempImg.onerror = reject;
-                tempImg.src = currentImageBase64; 
-            });
-        } catch (e) {
-            console.error("Failed to load image for JPG conversion:", e);
-            alert(isEn ? "Image processing failed." : "画像の処理に失敗しました。");
-            return;
-        }
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = tempImg.width;
-        canvas.height = tempImg.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(tempImg, 0, 0);
-
-        // 全てPNG形式で処理
-        const downloadFilename = filename.endsWith('.png') ? filename : filename.replace(/\.[^/.]+$/, "") + '.png';
-        const pngDataUrl = canvas.toDataURL('image/png');
-        contentToSave = pngDataUrl; // IndexedDB保存用にセット
-        
-        const pngRes = await fetch(pngDataUrl);
-        fileBlob = await pngRes.blob();
-
-        // 同期フォルダがあればPNGファイルを保存
-        if (directoryHandle) {
-            await saveBlobToDirectory(fileBlob, downloadFilename);
-        }
-    } else {
-        // テキストメモの場合
-        contentToSave = pasteAreaContent;
-        fileBlob = new Blob([contentToSave], { type: 'text/plain;charset=utf-8' });
+    if (pasteAreaContent !== "") {
+        const fname = specificName || `plower_memo_${timestamp}.txt`;
+        await saveSingleFile('text', pasteAreaContent, fname);
     }
 
-    // 3. 永続化（IndexedDB）
-    if (!contentToSave) {
-        alert(isEn ? "No content to save." : "永続化する内容がありません。");
-        return;
+    for (let imgObj of pastedImages) {
+        const fname = `plower_image_${timestamp}_${Math.floor(Math.random()*1000)}.png`;
+        await saveSingleFile('image', imgObj.data, fname);
     }
-    persistentDocuments.push({ name: filename, content: contentToSave });
+
+    if (pasteAreaContent === "" && pastedImages.length === 0) return;
+
     await saveDocuments();
-    
-    // 4. ダウンロード実行
-    if (fileBlob) {
-        const finalDownloadName = currentImageBase64 
-            ? (filename.endsWith('.png') ? filename : filename.replace(/\.[^/.]+$/, "") + '.png')
-            : filename;
-        
-        // 同期フォルダに保存済みの場合、ダウンロードは不要
-        if (directoryHandle && currentImageBase64) {
-            // alert(isEn ? `Image saved to sync folder as "${finalDownloadName}".` : `画像は同期フォルダに「${finalDownloadName}」として保存されました。`);
-        } else {
-        
+    pastedImages = [];
+    document.getElementById('pastePreview').innerHTML = '';
+    document.getElementById('pasteArea').value = '';
+    updateFileListDisplay();
+    alert(isEn ? "Saved to RAG source." : "RAGソースに保存しました。");
+}
+
+async function saveSingleFile(type, content, name) {
+    let blob;
+    if (type === 'text') {
+        blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    } else {
+        const res = await fetch(content);
+        blob = await res.blob();
+    }
+    persistentDocuments.push({ name: name, content: content });
+    if (directoryHandle) {
+        await saveBlobToDirectory(blob, name);
+    } else {
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(fileBlob);
-        link.download = finalDownloadName;
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        }
     }
-    
-    // 5. UIのクリーンアップ
-    alert(isEn ? `Saved as "${filename}". This file will be managed via the sync folder.` : `「${filename}」として保存し、RAGソースに追加しました。以降、同期フォルダから参照されます。`);
-    
-    if (currentImageBase64) {
-        currentImageBase64 = null; // 画像データは保存後にクリア
-    }
-    document.getElementById('pasteArea').value = ''; // テキストエリアは常にクリア
-    document.getElementById('pasteArea').placeholder = isEn ? "Paste text or image here..." : "ここにテキストや画像を貼り付け...";
-    updateFileListDisplay(); // ファイルリストを更新
 }
 
-
 // --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
-async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null, imageData = null) {
+async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null, imageDatas = []) {
     let result = '';
     let endpoint = '';
     let bodyData = {};
@@ -841,7 +933,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
                     contents: [{ 
                         parts: [
                             { text: llmPrompt },
-                            ...(imageData ? [{ inline_data: { mime_type: "image/jpeg", data: imageData.split(',')[1] } }] : [])
+                            ...imageDatas.map(data => ({ inline_data: { mime_type: "image/png", data: data.split(',')[1] } }))
                         ] 
                     }],
                     generationConfig: { temperature: 0.1 }
@@ -911,7 +1003,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
             model: modelSelect,
             prompt: llmPrompt,
             stream: true,
-            images: imageData ? [imageData.split(',')[1]] : undefined,
+            images: imageDatas.length > 0 ? imageDatas.map(data => data.split(',')[1]) : undefined,
             options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
         };
 
@@ -986,9 +1078,13 @@ async function sendToModel() {
         return;
     }
 
+    if (pasteAreaContent || pastedImages.length > 0) {
+        await saveCurrentContentAsFile();
+    }
+
     sendButton.disabled = true;
     sendButton.textContent = isEn ? 'Sending...' : '送信中...';
-    chatLog.innerHTML += `<p><strong>${isEn ? 'Question' : '質問'}:</strong> ${userInput}</p>`;
+    chatLog.innerHTML += `<p><strong>${isEn ? 'Question' : '質問'}:</strong> ${userInput || (isEn ? "(Analyze images)" : "(画像解析)")}</p>`;
     const responseParagraph = document.createElement('p');
     responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> (${isEn ? 'Processing...' : '処理中...'})`;
     chatLog.appendChild(responseParagraph);
@@ -1028,34 +1124,13 @@ ${userInput}`;
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
-        }, currentImageBase64);
+        }, allDocuments.filter(d => d.name.match(/\.png$/i)).map(d => d.content));
 
         // 最終結果の表示 (非ストリーミングモデル用)
         responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${finalResult.replace(/\n/g, '<br>')}`;
         
-        // 画像を解析に使用した場合、保存を提案する
-        if (currentImageBase64) {
-            const savePrompt = document.createElement('div');
-            savePrompt.style.marginTop = '15px';
-            savePrompt.style.padding = '10px';
-            savePrompt.style.border = '1px dashed #ccc';
-            savePrompt.innerHTML = `<p style="margin:0 0 10px 0; font-size:0.9em;">${isEn ? 'Analysis used an image. Save it locally?' : '画像を解析に使用しました。この画像をローカルに保存しますか？'}</p>`;
-            
-            const dlBtn = document.createElement('button');
-            dlBtn.textContent = isEn ? 'Save as JPG' : '画像をJPGで保存';
-            const imgDataToSave = currentImageBase64;
-            dlBtn.onclick = () => {
-                const link = document.createElement('a');
-                link.href = imgDataToSave;
-                link.download = `plower_analyzed_${Date.now()}.jpg`;
-                link.click();
-            };
-            savePrompt.appendChild(dlBtn);
-            responseParagraph.appendChild(savePrompt);
-            // 解析が終わったら画像キャッシュをクリア（次の質問で画像を使わないため）
-            currentImageBase64 = null;
-        }
-        
+        pastedImages = [];
+        document.getElementById('pastePreview').innerHTML = '';
         userInputElement.value = ''; // 質問欄をクリア
 
     } catch (error) {
@@ -1094,11 +1169,18 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDocuments(); 
     document.getElementById('sendButton').addEventListener('click', sendToModel);
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
-    document.getElementById('saveOcrButton').addEventListener('click', saveCurrentContentAsFile);
+    document.getElementById('saveOcrButton').addEventListener('click', () => saveCurrentContentAsFile());
     document.getElementById('syncFolderButton').addEventListener('click', syncLocalFolder);
     
     // DOMロード後にイベントリスナーを登録 (安全策)
     const pasteArea = document.getElementById('pasteArea');
+    
+    if (pasteArea && !document.getElementById('pastePreview')) {
+        const previewDiv = document.createElement('div');
+        previewDiv.id = 'pastePreview';
+        pasteArea.parentNode.insertBefore(previewDiv, pasteArea);
+    }
+
     if (pasteArea) pasteArea.addEventListener('paste', handlePaste);
 
     // APIキーのロードと保存処理
