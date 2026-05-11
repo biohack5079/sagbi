@@ -4,6 +4,12 @@ let persistentDocuments = [];
 // 現在解析対象となっている画像データ (Base64)
 let currentImageBase64 = null;
 
+// 現在解析対象となっている画像のベース名
+let currentImageName = "";
+
+// 現在解析対象となっている画像のオリジナルデータ (高画質)
+let currentImageBlob = null;
+
 // 言語設定の判定 (日本語以外なら英語モード)
 const isEn = !navigator.language.startsWith('ja');
 
@@ -541,7 +547,18 @@ async function handlePaste(e) {
 // --- 画像解析(OCR)とプレビュー・JPG保存処理 ---
 async function processImageSource(fileOrBlob) {
     const isFile = fileOrBlob instanceof File;
-    const name = isFile ? fileOrBlob.name : `pasted_image_${Date.now()}.png`;
+    currentImageBlob = fileOrBlob; // オリジナルの高画質データを保持
+    const now = new Date();
+    const pad = (num) => num.toString().padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+    // ブラウザの貼り付けなどで「image.png」や「img」という名前になることが多いため、
+    // 名前が汎用的な場合はタイムスタンプ付きの長い名前に置き換える
+    const baseName = isFile ? fileOrBlob.name.replace(/\.[^/.]+$/, "") : "";
+    const isGeneric = !baseName || /^(image|img)\d*$/i.test(baseName);
+    currentImageName = isGeneric ? `pasted_image_${timestamp}` : baseName;
+
+    const name = `${currentImageName}.jpg`;
     const fileContentDiv = document.getElementById('fileContent');
 
     const processingMessage = document.createElement('p');
@@ -620,7 +637,8 @@ async function saveOcrTextAsFile() {
     const pad = (num) => num.toString().padStart(2, '0');
     const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     
-    let defaultFilename = currentImageBase64 ? `plower_image_${timestamp}.png` : `plower_memo_${timestamp}.txt`;
+    // 画面上の表示やダイアログの初期値は .jpg に統一（ユーザーへの表示用）
+    let defaultFilename = currentImageBase64 ? `${currentImageName || 'plower_image_' + timestamp}.jpg` : `plower_memo_${timestamp}.txt`;
     const filename = await showRenameDialog(isEn ? 'Save As' : '名前を付けて保存', defaultFilename);
     if (!filename) return;
 
@@ -629,55 +647,59 @@ async function saveOcrTextAsFile() {
 
     // 画像がある場合の処理
     if (currentImageBase64) {
+        // ローカル保存用のファイル名は、UI上の拡張子に関わらず .png に強制（高画質を維持）
+        const downloadName = filename.replace(/\.[^/.]+$/, "") + ".png";
+
+        // 1. ローカルフォルダ/ダウンロード用 (オリジナルの Blob をそのまま使用 = 高画質)
+        fileBlob = currentImageBlob;
+
+        // 2. 内部ストレージ(IndexedDB)用 (JPG - ブラウザの容量制限対策のため圧縮版を使用)
         const tempImg = new Image();
         await new Promise(resolve => { tempImg.onload = resolve; tempImg.src = currentImageBase64; });
-        
         const canvas = document.createElement('canvas');
-        canvas.width = tempImg.width;
-        canvas.height = tempImg.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(tempImg, 0, 0);
-
-        // 1. ローカルフォルダ/ダウンロード用 (PNG)
-        const pngDataUrl = canvas.toDataURL('image/png');
-        const pngRes = await fetch(pngDataUrl);
-        fileBlob = await pngRes.blob();
-
-        // 2. 内部ストレージ(IndexedDB)用 (JPG - 容量節キュ)
+        canvas.width = tempImg.width; canvas.height = tempImg.height;
+        canvas.getContext('2d').drawImage(tempImg, 0, 0);
         contentToSave = canvas.toDataURL('image/jpeg', 0.7);
 
-        // 同期フォルダがあればPNGを保存
+        // 同期フォルダがあれば .png として保存
         if (directoryHandle) {
-            await saveBlobToDirectory(fileBlob, filename);
+            await saveBlobToDirectory(fileBlob, downloadName);
         }
+
+        // ファイルとしてダウンロード実行 (.png として保存)
+        if (fileBlob) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(fileBlob);
+            link.download = downloadName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        alert(isEn ? `Saved as "${downloadName}".` : `「${downloadName}」として保存し、RAGソースに追加しました。`);
     } else {
         contentToSave = pasteAreaContent;
         fileBlob = new Blob([contentToSave], { type: 'text/plain;charset=utf-8' });
+
+        if (fileBlob) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(fileBlob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        alert(isEn ? `Saved as "${filename}".` : `「${filename}」として保存し、RAGソースに追加しました。`);
     }
 
-    if (!contentToSave) {
-        alert(isEn ? "No content to save." : "永続化する内容がありません。");
-        return;
+    if (contentToSave) {
+        persistentDocuments.push({ name: filename, content: contentToSave });
+        await saveDocuments();
     }
-
-    persistentDocuments.push({ name: filename, content: contentToSave });
-    await saveDocuments();
-    
-    // ファイルとしてダウンロード実行
-    if (fileBlob) {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(fileBlob);
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-    
-    // 5. UIのクリーンアップ
-    alert(isEn ? `Saved as "${filename}".` : `「${filename}」として保存し、RAGソースに追加しました。`);
     
     document.getElementById('pasteArea').value = '';
     currentImageBase64 = null;
+    currentImageBlob = null;
+    currentImageName = "";
     clearOcrDisplay(); // 重要な変更点：保存が完了したら画像とステータスをクリア
     updateFileListDisplay(); // ファイルリストを更新
 }
@@ -928,6 +950,8 @@ ${userInput}`;
             responseParagraph.appendChild(savePrompt);
             // 解析が終わったら画像キャッシュをクリア（次の質問で画像を使わないため）
             currentImageBase64 = null;
+            currentImageBlob = null;
+            currentImageName = "";
         }
         
         userInputElement.value = ''; // 質問欄をクリア
