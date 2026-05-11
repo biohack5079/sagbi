@@ -15,8 +15,8 @@ sleep 5
 echo "🔴 モデルのダウンロードを開始します..."
 
 # ビルド時に pull 済みですが、整合性確認のため実行
-echo "--- Pulling gemma2:2b ---"
-ollama pull gemma2:2b
+echo "--- Pulling gemma-3:4b ---"
+ollama pull gemma-3:4b
 
 echo "🟢 すべてのモデルの準備が完了しました！"
 
