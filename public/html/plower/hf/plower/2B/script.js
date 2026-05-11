@@ -890,8 +890,8 @@ ${userInput}`;
                     : "<br>⚠️ <strong>セキュリティ制限:</strong> ファイルを直接ブラウザで開いている(file://)ため、APIリクエストが遮断されました。VS CodeのLive Serverを使用するか、'npx serve' 等のローカルサーバー経由で開いてください。";
             } else {
                 errorMsg += isEn 
-                    ? "<br>⚠️ Request Blocked: Check your Internet connection and API Token. If using Gemma 3, make sure you've accepted the license on the Hugging Face model page."
-                    : "<br>⚠️ リクエストが遮断されました: トークンの権限、ネット接続、広告ブロックを確認してください。Gemma 3を使用する場合、HFのモデルページでライセンスへの同意が必要です。";
+                    ? "<br>⚠️ Request Blocked: Check your Internet connection and API Token. If using Gemma 2, make sure you've accepted the license on the Hugging Face model page."
+                    : "<br>⚠️ リクエストが遮断されました: トークンの権限、ネット接続、広告ブロックを確認してください。Gemma 2を使用する場合、HFのモデルページでライセンスへの同意が必要です。";
                 errorMsg += `<br><small>Debug Info: ${error.name} - ${error.message}</small>`;
                 
                 if (window.location.protocol === 'https:') {
