@@ -12,7 +12,7 @@
     </style>
 </head>
 <body>
-    <h1>ローカル情報を掘り起こすAIショベル「プラウアー」。 <a href="manual.html" id="manualLink" style="font-size: 0.4em; margin-left: 15px; text-decoration: none; background: #eee; padding: 5px 10px; border-radius: 4px; color: #333; vertical-align: middle;">[使い方説明書]</a></h1>
+    <h1><span id="titleText">ローカル情報を掘り起こすAIショベル「プラウアー」。</span> <a href="manual.html" id="manualLink" style="font-size: 0.4em; margin-left: 15px; text-decoration: none; background: #eee; padding: 5px 10px; border-radius: 4px; color: #333; vertical-align: middle;">[使い方説明書]</a></h1>
     <div class="rag-controls-header">
         <label for="fileInput">RAGソース (フォルダ/ファイル):</label>
         <input type="file" id="fileInput" multiple>
@@ -100,7 +100,7 @@
             };
 
             document.title = t.title;
-            document.querySelector('h1').textContent = t.title;
+            document.getElementById('titleText').textContent = t.title;
             document.querySelector('label[for="fileInput"]').textContent = t.ragSource;
             document.getElementById('syncFolderButton').textContent = t.sync;
             document.getElementById('resetDocsButton').textContent = t.reset;
