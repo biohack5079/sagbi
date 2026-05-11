@@ -259,95 +259,98 @@ function createContextMenu(e, index) {
     setTimeout(() => document.addEventListener('click', closeMenu), 0);
 }
 
-function renameDocument(index) {
-    const doc = persistentDocuments[index];
-    
-    // カスタムダイアログを作成 (promptでは選択範囲の制御ができないため)
-    const overlay = document.createElement('div');
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-    overlay.style.zIndex = '2000';
-    overlay.style.display = 'flex';
-    overlay.style.justifyContent = 'center';
-    overlay.style.alignItems = 'center';
+// 共通のファイル名入力ダイアログ (拡張子を除いた部分を選択状態にする)
+function showRenameDialog(titleText, initialValue) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.zIndex = '2000';
+        overlay.style.display = 'flex';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
 
-    const dialog = document.createElement('div');
-    dialog.style.backgroundColor = 'white';
-    dialog.style.padding = '20px';
-    dialog.style.borderRadius = '8px';
-    dialog.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-    dialog.style.minWidth = '300px';
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '8px';
+        dialog.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+        dialog.style.minWidth = '300px';
 
-    const title = document.createElement('h3');
-    title.textContent = isEn ? 'Rename' : '名前を変更';
-    title.style.marginTop = '0';
-    title.style.marginBottom = '15px';
-    
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = doc.name;
-    input.style.width = '100%';
-    input.style.padding = '8px';
-    input.style.marginBottom = '20px';
-    input.style.boxSizing = 'border-box';
-    input.style.fontSize = '16px';
+        const title = document.createElement('h3');
+        title.textContent = titleText;
+        title.style.marginTop = '0';
+        title.style.marginBottom = '15px';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = initialValue;
+        input.style.width = '100%';
+        input.style.padding = '8px';
+        input.style.marginBottom = '20px';
+        input.style.boxSizing = 'border-box';
+        input.style.fontSize = '16px';
 
-    const btnContainer = document.createElement('div');
-    btnContainer.style.display = 'flex';
-    btnContainer.style.justifyContent = 'flex-end';
-    btnContainer.style.gap = '10px';
+        const btnContainer = document.createElement('div');
+        btnContainer.style.display = 'flex';
+        btnContainer.style.justifyContent = 'flex-end';
+        btnContainer.style.gap = '10px';
 
-    const closeDialog = () => overlay.remove();
+        const closeDialog = (val) => {
+            overlay.remove();
+            resolve(val);
+        };
 
-    const save = async () => {
-        const newName = input.value.trim();
-        if (newName && newName !== "" && newName !== doc.name) {
-            doc.name = newName;
-            await saveDocuments();
-            updateFileListDisplay();
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = isEn ? 'Cancel' : 'キャンセル';
+        cancelBtn.style.padding = '6px 12px';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.onclick = () => closeDialog(null);
+        
+        const okBtn = document.createElement('button');
+        okBtn.textContent = 'OK';
+        okBtn.style.padding = '6px 12px';
+        okBtn.style.cursor = 'pointer';
+        okBtn.onclick = () => {
+            const val = input.value.trim();
+            if (val) closeDialog(val);
+        };
+
+        btnContainer.appendChild(cancelBtn);
+        btnContainer.appendChild(okBtn);
+        dialog.appendChild(title);
+        dialog.appendChild(input);
+        dialog.appendChild(btnContainer);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        input.focus();
+        const lastDotIndex = initialValue.lastIndexOf('.');
+        if (lastDotIndex > 0) {
+            input.setSelectionRange(0, lastDotIndex);
+        } else {
+            input.select();
         }
-        closeDialog();
-    };
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = isEn ? 'Cancel' : 'キャンセル';
-    cancelBtn.style.padding = '6px 12px';
-    cancelBtn.style.cursor = 'pointer';
-    cancelBtn.onclick = closeDialog;
-    
-    const okBtn = document.createElement('button');
-    okBtn.textContent = 'OK';
-    okBtn.style.padding = '6px 12px';
-    okBtn.style.cursor = 'pointer';
-    okBtn.onclick = save;
-
-    btnContainer.appendChild(cancelBtn);
-    btnContainer.appendChild(okBtn);
-
-    dialog.appendChild(title);
-    dialog.appendChild(input);
-    dialog.appendChild(btnContainer);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-
-    // 入力欄にフォーカスし、拡張子を除いた部分を選択状態にする
-    input.focus();
-    const lastDotIndex = doc.name.lastIndexOf('.');
-    if (lastDotIndex > 0) {
-        input.setSelectionRange(0, lastDotIndex);
-    } else {
-        input.select();
-    }
-
-    // Enterキーで保存、Escapeでキャンセル
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') save();
-        if (e.key === 'Escape') closeDialog();
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') okBtn.click();
+            if (e.key === 'Escape') cancelBtn.click();
+        });
     });
+}
+
+async function renameDocument(index) {
+    const doc = persistentDocuments[index];
+    const newName = await showRenameDialog(isEn ? 'Rename' : '名前を変更', doc.name);
+    if (newName && newName !== doc.name) {
+        doc.name = newName;
+        await saveDocuments();
+        updateFileListDisplay();
+    }
 }
 
 async function deleteDocument(index) {
@@ -608,19 +611,24 @@ async function processImageSource(fileOrBlob) {
 
 async function saveOcrTextAsFile() {
     const pasteAreaContent = document.getElementById('pasteArea').value.trim();
+    if (!currentImageBase64 && !pasteAreaContent) {
+        alert(isEn ? "No content to save." : "永続化する内容がありません。");
+        return;
+    }
+
     const now = new Date();
     const pad = (num) => num.toString().padStart(2, '0');
     const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     
+    let defaultFilename = currentImageBase64 ? `plower_image_${timestamp}.png` : `plower_memo_${timestamp}.txt`;
+    const filename = await showRenameDialog(isEn ? 'Save As' : '名前を付けて保存', defaultFilename);
+    if (!filename) return;
+
     let contentToSave = '';
-    let filename = '';
     let fileBlob;
 
     // 画像がある場合の処理
     if (currentImageBase64) {
-        // 注意喚起
-        alert(isEn ? "Saved. This file will be referenced from the RAG source." : "保存しました。以降そこが参照されます。");
-
         const tempImg = new Image();
         await new Promise(resolve => { tempImg.onload = resolve; tempImg.src = currentImageBase64; });
         
@@ -631,7 +639,6 @@ async function saveOcrTextAsFile() {
         ctx.drawImage(tempImg, 0, 0);
 
         // 1. ローカルフォルダ/ダウンロード用 (PNG)
-        filename = `plower_image_${timestamp}.png`;
         const pngDataUrl = canvas.toDataURL('image/png');
         const pngRes = await fetch(pngDataUrl);
         fileBlob = await pngRes.blob();
@@ -644,7 +651,6 @@ async function saveOcrTextAsFile() {
             await saveBlobToDirectory(fileBlob, filename);
         }
     } else {
-        filename = `plower_memo_${timestamp}.txt`;
         contentToSave = pasteAreaContent;
         fileBlob = new Blob([contentToSave], { type: 'text/plain;charset=utf-8' });
     }
