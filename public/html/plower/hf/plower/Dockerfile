@@ -8,9 +8,11 @@ WORKDIR $HOME
 # 権限設定のために一時的にrootユーザーへ切り替え
 USER root
 
-# モデル保存用ディレクトリを作成し、権限をUID 1000に設定
+# 必要なツールのインストールとディレクトリ作成
 # これにより "permission denied" エラーを防ぎます
-RUN mkdir -p $HOME/.ollama/models && \
+RUN apt-get update && apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p $HOME/.ollama/models && \
     chown -R 1000:1000 $HOME
 
 # 起動スクリプトをコピーして実行権限を付与
@@ -27,10 +29,13 @@ ENV OLLAMA_MODELS=$HOME/.ollama/models
 # 実行ユーザーをUID 1000に切り替え
 USER 1000
 
-# モデルのプリインストール (タイムアウト回避のため Gemma 2 2B に変更)
+# モデルのプリインストール (GGUFを直接ダウンロードしてカスタムモデルを作成)
 RUN (ollama serve &) && \
     until ollama list >/dev/null 2>&1; do sleep 1; done && \
-    ollama pull gemma2:2b && \
+    curl -L "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q8_0.gguf" -o model.gguf && \
+    echo "FROM model.gguf" > Modelfile && \
+    ollama create gemma-3-4b-q8 -f Modelfile && \
+    rm model.gguf Modelfile && \
     pkill ollama
 
 # 【重要】ベースイメージのENTRYPOINT（ollamaコマンドの自動実行）を無効化します

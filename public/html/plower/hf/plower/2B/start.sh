@@ -12,13 +12,13 @@ pid=$!
 # サーバーが立ち上がるまで少し待機
 sleep 5
 
-echo "🔴 モデルの準備を確認します..."
+echo "🔴 モデルのダウンロードを開始します..."
 
-# ビルド時に作成したカスタムモデルが存在するか確認
-echo "--- Checking gemma-3-4b-q8 ---"
-ollama list | grep gemma-3-4b-q8
+# ビルド時に pull 済みですが、整合性確認のため実行
+echo "--- Pulling gemma2:2b ---"
+ollama pull gemma2:2b
 
-echo "🟢 すべてのモデルの準備が完了しました！ (Using: gemma-3-4b-q8)"
+echo "🟢 すべてのモデルの準備が完了しました！"
 
 # プロセスが終了しないように待機
 wait $pid
