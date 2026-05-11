@@ -502,15 +502,18 @@ async function loadFilesFromDirectory(isSilent = false) {
         // 再帰的にファイルを読み込むヘルパー関数
         async function readDirectoryRecursive(dirHandle, pathPrefix = '') {
             for await (const entry of dirHandle.values()) {
+                const fullPath = pathPrefix + entry.name;
+                scannedDocNames.add(fullPath); // 見つかったすべてのパスを記録
+
                 if (entry.kind === 'file') {
-                    const isText = /\.(txt|md|log|py|js|json|c|cpp|h|java|html|css|csv|rb|go|rs|php)$/i.test(entry.name);
+                    const isTxt = entry.name.toLowerCase().endsWith('.txt');
                     const isImage = /\.(png|jpg|jpeg|webp|gif)$/i.test(entry.name);
                     
-                    if (isText || isImage) {
+                    if (isTxt || isImage) {
                         try {
                             const file = await entry.getFile();
                             let content;
-                            if (isText) {
+                            if (isTxt) {
                                 content = await file.text();
                             } else {
                                 // 画像はData URLとして読み込む
@@ -521,14 +524,16 @@ async function loadFilesFromDirectory(isSilent = false) {
                                     reader.readAsDataURL(file);
                                 });
                             }
-                            // パスを含めた名前で保存 (例: subfolder/file.txt)
-                            scannedDocs.push({ name: pathPrefix + entry.name, content: content });
+                            scannedDocs.push({ name: fullPath, content: content });
                         } catch (e) {
                             console.warn(`Skipped file: ${entry.name}`, e);
                         }
+                    } else {
+                        // それ以外のファイルは名前のみリストに追加
+                        scannedDocs.push({ name: fullPath, content: "" });
                     }
                 } else if (entry.kind === 'directory') {
-                    await readDirectoryRecursive(entry, pathPrefix + entry.name + '/');
+                    await readDirectoryRecursive(entry, fullPath + '/');
                 }
             }
         }
