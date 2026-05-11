@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <title>ローカル情報を掘り起こすAIショベル「プラウアー」。</title>
     <link rel="stylesheet" href="style.css"> 
-    <script src='https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'></script>
     <style>
         h1 {
             white-space: nowrap;
@@ -32,9 +31,9 @@
     <hr>
 
     <label for="pasteArea">一時的なRAGコンテキストとしてテキストまたは画像を貼り付け:</label>
-    <textarea id="pasteArea" placeholder="ここにテキストを貼り付けてください。Ctrl+Vで画像を貼り付けるとOCR処理が開始されます。"></textarea>
+    <textarea id="pasteArea" placeholder="ここにテキストを貼り付けてください。画像を貼り付けると、解析用画像として認識されます。"></textarea>
 
-    <button id="saveOcrButton">OCR/貼付テキストを永続ファイルとして保存</button>
+    <button id="saveOcrButton">貼付テキスト/画像メモを永続ファイルとして保存</button>
     <hr>
 
     <label for="userInput">質問を入力:</label>
@@ -83,8 +82,8 @@
                 listHeader: 'RAG Source Files (Persisted/Uploaded)',
                 preview: '[Preview of loaded document or selection will appear here]',
                 pasteLabel: 'Paste text or image as temporary RAG context:',
-                pastePlaceholder: 'Paste text here. Ctrl+V to paste image triggers OCR.',
-                saveOcr: 'Save OCR/Pasted Text as Persistent File',
+                pastePlaceholder: 'Paste text here. Ctrl+V to paste image for multimodal analysis.',
+                saveOcr: 'Save Pasted Text/Image Memo as Persistent File',
                 inputLabel: 'Enter Question:',
                 inputPlaceholder: 'Please enter your question...',
                 keyLabel: 'Gemini API Key:',

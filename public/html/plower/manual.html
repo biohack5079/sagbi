@@ -60,7 +60,7 @@
             <ul>
                 <li id="srcUpload"><strong>アップロード:</strong> 「RAGソース」からローカルのテキストファイルを選択します。</li>
                 <li id="srcSync"><strong>同期:</strong> 「ローカルフォルダ同期」でディレクトリを自動追跡します（Chrome/Edgeのみ）。</li>
-                <li id="srcOcr"><strong>OCR:</strong> テキストエリアに画像を貼り付けると、Tesseract.jsで文字を抽出します。</li>
+                <li id="srcOcr"><strong>画像:</strong> テキストエリアに画像を貼り付けると、LLMのマルチモーダル解析用コンテキストとして認識されます。</li>
             </ul>
         </div>
 
@@ -89,7 +89,7 @@
                 srcTitle: '2. Document Sources',
                 srcUpload: '<strong>Upload:</strong> Click "Choose Files" to add local text files.',
                 srcSync: '<strong>Sync:</strong> Use "Sync Local Folder" to track a directory automatically (Chrome/Edge only).',
-                srcOcr: '<strong>OCR:</strong> Paste an image directly into the text area to extract text via Tesseract.js.',
+                srcOcr: '<strong>Images:</strong> Paste an image directly into the text area to use it for multimodal LLM analysis.',
                 qTitle: '3. Asking Questions',
                 qDesc: 'Enter your question in the box. Plower sends all loaded documents as context. The model will answer based <em>only</em> on those documents.'
             };

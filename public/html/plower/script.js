@@ -1,52 +1,96 @@
 // 永続化された文書を格納 (LocalStorageからロード)
 let persistentDocuments = []; 
-// 貼り付け画像からOCR処理で生成された一時文書を格納
-let ocrDocuments = []; 
+
+// 現在解析対象となっている画像データ (Base64)
+let currentImageBase64 = null;
 
 // 言語設定の判定 (日本語以外なら英語モード)
 const isEn = !navigator.language.startsWith('ja');
 
-// Tesseract Workerを初期化（OCR処理用）
-let worker;
-
 const PREVIEW_MAX_DOCS = 5; // コンテンツ表示エリアに表示する最大ファイル数
 
+// --- IndexedDB 初期化 ---
+const dbName = "PlowerDB";
+const storeName = "documents";
+
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, 1);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            db.createObjectStore(storeName);
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
 // --- LocalStorageからの文書ロードとファイル一覧の表示 ---
-function loadDocuments() {
+async function loadDocuments() {
     try {
-        const storedDocs = localStorage.getItem('plowerRAGDocs');
-        persistentDocuments = storedDocs ? JSON.parse(storedDocs) : [];
+        // 移行期対応: LocalStorageにデータがあれば取得して移行
+        const legacyDocs = localStorage.getItem('plowerRAGDocs');
+        if (legacyDocs) {
+            persistentDocuments = JSON.parse(legacyDocs);
+            await saveDocuments(); // 新しいDBに保存
+            localStorage.removeItem('plowerRAGDocs'); // 移行完了後削除
+        } else {
+            const db = await openDB();
+            const tx = db.transaction(storeName, "readonly");
+            const store = tx.objectStore(storeName);
+            const request = store.get("plowerRAGDocs");
+            persistentDocuments = await new Promise((resolve) => {
+                request.onsuccess = () => resolve(request.result || []);
+                request.onerror = () => resolve([]);
+            });
+        }
         updateFileListDisplay();
     } catch (e) {
-        console.error("Failed to load documents from LocalStorage:", e);
+        console.error("Failed to load documents:", e);
         persistentDocuments = [];
     }
 }
 
 // --- LocalStorageへの文書保存 ---
-function saveDocuments() {
+async function saveDocuments() {
     try {
-        localStorage.setItem('plowerRAGDocs', JSON.stringify(persistentDocuments));
+        const db = await openDB();
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        store.put(persistentDocuments, "plowerRAGDocs");
     } catch (e) {
-        console.error("Failed to save documents to LocalStorage:", e);
+        console.error("Failed to save documents:", e);
+    }
+}
+
+// ヘルパー: Blobを同期フォルダに書き込む
+async function saveBlobToDirectory(blob, filename) {
+    if (!directoryHandle) return false;
+    try {
+        const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+    } catch (e) {
+        console.error("Failed to auto-save to directory:", e);
+        return false;
     }
 }
 
 // LocalStorageをリセットする関数
-function resetDocuments() {
+async function resetDocuments() {
     const msgConfirm = isEn 
         ? "Are you sure you want to delete all RAG source documents?\n(This cannot be undone. All uploaded files will be cleared from LocalStorage.)"
         : "本当にRAGソース文書を全て削除しますか？\n（この操作は元に戻せません。アップロードされたファイルがLocalStorageから全て消去されます。）";
     if (confirm(msgConfirm)) {
         try {
-            // LocalStorageからキーを削除
-            localStorage.removeItem('plowerRAGDocs');
-            
-            // アプリケーション内のデータをクリア
+            const db = await openDB();
+            const tx = db.transaction(storeName, "readwrite");
+            tx.objectStore(storeName).clear();
+
             persistentDocuments = [];
-            ocrDocuments = [];
             document.getElementById('pasteArea').value = '';
-            // OCR関連の表示もクリア
             clearOcrDisplay();
 
             // 同期設定のクリア
@@ -77,6 +121,11 @@ function updateFileListDisplay() {
     const fileContentDiv = document.getElementById('fileContent');
     fileListUl.innerHTML = '';
     
+    // 解析中の画像やステータス表示を一時退避（リスト更新で消えないようにするため）
+    const ocrElements = Array.from(fileContentDiv.children).filter(el => 
+        el.classList.contains('ocr-status') || el.tagName === 'IMG' || (el.tagName === 'DIV' && el.querySelector('img'))
+    );
+
     // ファイル名のリストを生成
     persistentDocuments.forEach((doc, index) => {
         const li = document.createElement('li');
@@ -127,18 +176,22 @@ function updateFileListDisplay() {
     
     if (recentDocs.length > 0) {
         recentDocs.forEach(doc => {
-            // ファイル名と内容を分かりやすく表示
-            initialContent += `<p><strong>【${doc.name}】</strong></p><pre>--- ${isEn ? 'File Name' : 'ファイル名'}: ${doc.name} ---\n${doc.content.slice(0, 300)}${doc.content.length > 300 ? '...' : ''}</pre>\n`;
+            initialContent += `<p><strong>【${doc.name}】</strong></p>`;
+            if (doc.content.startsWith('data:image/')) {
+                // 画像の場合はサムネイルを表示
+                initialContent += `<div style="margin-bottom:10px;"><img src="${doc.content}" style="max-width:200px; max-height:150px; border:1px solid #ccc; border-radius:4px;"></div>`;
+            } else {
+                // テキストの場合は内容の一部を表示
+                initialContent += `<pre>--- ${isEn ? 'File Name' : 'ファイル名'}: ${doc.name} ---\n${doc.content.slice(0, 300)}${doc.content.length > 300 ? '...' : ''}</pre>\n`;
+            }
         });
     } else {
         initialContent += isEn ? '<p>No RAG source documents available.</p>' : '<p>現在RAGのソースとなる文書はありません。</p>';
     }
     fileContentDiv.innerHTML = initialContent;
     
-    // OCRで残っている画像やステータスがあれば再挿入（これは初期表示時のみの特殊な対応）
-    // clearOcrDisplay() でクリアされるため、通常は空になるはずですが、念のため
-    const existingOcrContent = document.querySelectorAll('#fileContent img, #fileContent .ocr-status');
-    existingOcrContent.forEach(el => fileContentDiv.prepend(el));
+    // 退避しておいたOCR要素をプレビューエリアに再挿入
+    ocrElements.forEach(el => fileContentDiv.prepend(el));
 }
 
 // --- ファイル名クリック時の内容表示 ---
@@ -146,9 +199,13 @@ function showDocumentContent(index) {
     const fileContentDiv = document.getElementById('fileContent');
     const doc = persistentDocuments[index];
     if (doc) {
-        // 選択されたファイルの全文
-        // 表示
-        fileContentDiv.innerHTML = `<h3>${isEn ? 'Selected File' : '選択中のファイル'}: ${doc.name}</h3><pre>${doc.content}</pre>`;
+        let contentHtml = `<h3>${isEn ? 'Selected File' : '選択中のファイル'}: ${doc.name}</h3>`;
+        if (doc.content.startsWith('data:image/')) {
+            contentHtml += `<img src="${doc.content}" style="max-width:100%; border:1px solid #ddd; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">`;
+        } else {
+            contentHtml += `<pre>${doc.content}</pre>`;
+        }
+        fileContentDiv.innerHTML = contentHtml;
     }
 }
 
@@ -246,11 +303,11 @@ function renameDocument(index) {
 
     const closeDialog = () => overlay.remove();
 
-    const save = () => {
+    const save = async () => {
         const newName = input.value.trim();
         if (newName && newName !== "" && newName !== doc.name) {
             doc.name = newName;
-            saveDocuments();
+            await saveDocuments();
             updateFileListDisplay();
         }
         closeDialog();
@@ -293,12 +350,12 @@ function renameDocument(index) {
     });
 }
 
-function deleteDocument(index) {
+async function deleteDocument(index) {
     const doc = persistentDocuments[index];
     const msg = isEn ? `Are you sure you want to delete "${doc.name}"?` : `本当に「${doc.name}」を削除しますか？`;
     if (confirm(msg)) {
         persistentDocuments.splice(index, 1);
-        saveDocuments();
+        await saveDocuments();
         updateFileListDisplay();
     }
 }
@@ -432,68 +489,6 @@ async function loadFilesFromDirectory(isSilent = false) {
     }
 }
 
-// OCRエンジンの初期化状態を管理
-let isOcrInitializing = false;
-
-// OCRワーカーを事前に初期化する関数
-async function initOcrWorker(statusElement = null) {
-    if (worker) return worker;
-    if (isOcrInitializing) return null; // 初期化中なら何もしない
-
-    isOcrInitializing = true;
-    try {
-        const logger = m => {
-            if (!statusElement) return;
-            const progress = Math.round(m.progress * 100);
-            let statusText = '';
-            if (m.status === 'downloading tesseract core') statusText = `OCRエンジン(WASM)をDL中... (${progress}%)`;
-            else if (m.status === 'loading language traineddata') statusText = `言語データをロード中... (${progress}%)`;
-            else if (m.status === 'recognizing text') statusText = `テキスト認識中: ${progress}%`;
-            else statusText = `OCR準備中: ${m.status}`;
-            statusElement.innerHTML = `<div class="spinner"></div> ${statusText}`;
-        };
-
-        worker = await Tesseract.createWorker({ logger });
-        await worker.loadLanguage('jpn+eng');
-        await worker.initialize('jpn+eng');
-        console.log("OCR Worker initialized via WASM.");
-        return worker;
-    } catch (error) {
-        console.error("OCR Initialization Error:", error);
-        throw error;
-    } finally {
-        isOcrInitializing = false;
-    }
-}
-
-// --- Tesseract.js OCR処理関数 (改善版) ---
-async function runOcrOnImage(base64Image, statusElement) {
-    try {
-        statusElement.style.color = 'orange';
-        
-        // すでに初期化中または未初期化の場合は、ここで待機/実行
-        if (!worker) {
-            await initOcrWorker(statusElement);
-        } else {
-            // 既存のワーカーに新しいロガー（今回の表示先）をセットする仕組みはないため、
-            // 認識中メッセージだけ表示
-            statusElement.innerHTML = '<div class="spinner"></div> テキストを認識中...';
-        }
-
-        // 認識フェーズ
-        const { data: { text } } = await worker.recognize(base64Image);
-        if (statusElement) {
-            statusElement.style.color = 'green';
-            statusElement.textContent = '認識完了';
-        }
-        return text;
-    } catch (error) {
-        console.error("Tesseract OCR Error:", error);
-        throw new Error(`OCR処理中に致命的なエラーが発生しました: ${error.message}`);
-    }
-}
-
-
 // --- ファイル入力のイベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('fileInput');
@@ -502,19 +497,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const files = this.files;
             if (files.length === 0) return;
             
-            Array.from(files).forEach(file => {
+            Array.from(files).forEach(async file => {
                 if (file.size > 10 * 1024 * 1024) {
                     alert(isEn ? `File "${file.name}" exceeds 10MB limit.` : `ファイル「${file.name}」はサイズ制限（10MB）を超えているためスキップされました。`);
                     return;
                 }
 
                 if (file.type.startsWith('image/')) {
-                    processImageSource(file);
+                    await processImageSource(file);
                 } else {
                     const reader = new FileReader();
                     reader.onload = function (e) {
                         persistentDocuments.push({ name: file.name, content: e.target.result });
-                        saveDocuments();
+                        saveDocuments(); // 非同期だが順序不問のためそのまま
                         updateFileListDisplay();
                     };
                     reader.readAsText(file);
@@ -546,14 +541,10 @@ async function processImageSource(fileOrBlob) {
     const name = isFile ? fileOrBlob.name : `pasted_image_${Date.now()}.png`;
     const fileContentDiv = document.getElementById('fileContent');
 
-    if (!isFile) {
-        ocrDocuments = [];
-        clearOcrDisplay();
-    }
-
     const processingMessage = document.createElement('p');
     processingMessage.className = 'ocr-status';
-    processingMessage.textContent = isEn ? `Analyzing ${name}...` : `画像を解析中: ${name}...`;
+    processingMessage.style.fontWeight = 'bold';
+    processingMessage.textContent = isEn ? `Image ready: ${name}` : `画像を確認しました: ${name}`;
     fileContentDiv.prepend(processingMessage);
 
     const reader = new FileReader();
@@ -593,90 +584,101 @@ async function processImageSource(fileOrBlob) {
                 link.download = name.split('.')[0] + ".jpg";
                 link.click();
             };
+            currentImageBase64 = jpegUrl; // LLM送信用に保持
         };
         tempImg.src = base64Image;
 
         container.appendChild(dlBtn);
         fileContentDiv.prepend(container);
 
-        try {
-            const ocrText = await runOcrOnImage(base64Image, processingMessage);
-            const fullOcrContent = ocrText.trim();
-            if (fullOcrContent) {
-                ocrDocuments.push({ name: name, content: fullOcrContent });
-                processingMessage.innerHTML = `✅ ${isEn ? 'OCR Complete' : '解析完了'}: <strong>${name}</strong>`;
-                processingMessage.style.color = 'green';
-            } else {
-                processingMessage.innerHTML = `⚠️ ${isEn ? 'No text detected' : 'テキストを検出できませんでした'}: ${name}`;
-                processingMessage.style.color = 'orange';
+        // 解析を待たずに保存を確認
+        setTimeout(() => {
+            const msg = isEn 
+                ? `Image "${name}" detected. Save this image to RAG source?` 
+                : `画像「${name}」を検出しました。この画像をRAGソース（永続ファイル）に保存しますか？`;
+            if (confirm(msg)) {
+                saveOcrTextAsFile();
             }
-        } catch (error) {
-            processingMessage.innerHTML = `❌ OCR Error: ${error.message}`;
-            processingMessage.style.color = 'red';
-        } finally {
-            document.getElementById('pasteArea').value = '';
-        }
+        }, 100);
     };
     reader.readAsDataURL(fileOrBlob);
 }
 
 // --- OCR/貼付テキストのファイル保存と永続化 ---
 
-function saveOcrTextAsFile() {
-    const allTextDocuments = [...ocrDocuments];
+async function saveOcrTextAsFile() {
     const pasteAreaContent = document.getElementById('pasteArea').value.trim();
+    const now = new Date();
+    const pad = (num) => num.toString().padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     
     let contentToSave = '';
-    
-    // 1. OCRで抽出された一時文書を統合
-    const fileNameLabel = isEn ? 'File Name' : 'ファイル名';
-    const pasteLabel = isEn ? 'Pasted Text' : '貼付テキスト';
+    let filename = '';
+    let fileBlob;
 
-    allTextDocuments.forEach(doc => {
-        contentToSave += `--- ${fileNameLabel}: ${doc.name} ---\n`;
-        contentToSave += doc.content + '\n\n';
-    });
-    
-    // 2. 貼り付けエリアのテキストを統合
-    if (pasteAreaContent) {
-           contentToSave += `--- ${fileNameLabel}: ${pasteLabel} ---\n`;
-           contentToSave += pasteAreaContent + '\n\n';
+    // 画像がある場合の処理
+    if (currentImageBase64) {
+        // 注意喚起
+        alert(isEn ? "Saved. This file will be referenced from the RAG source." : "保存しました。以降そこが参照されます。");
+
+        const tempImg = new Image();
+        await new Promise(resolve => { tempImg.onload = resolve; tempImg.src = currentImageBase64; });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = tempImg.width;
+        canvas.height = tempImg.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(tempImg, 0, 0);
+
+        // 1. ローカルフォルダ/ダウンロード用 (PNG)
+        filename = `plower_image_${timestamp}.png`;
+        const pngDataUrl = canvas.toDataURL('image/png');
+        const pngRes = await fetch(pngDataUrl);
+        fileBlob = await pngRes.blob();
+
+        // 2. 内部ストレージ(IndexedDB)用 (JPG - 容量節キュ)
+        contentToSave = canvas.toDataURL('image/jpeg', 0.7);
+
+        // 同期フォルダがあればPNGを保存
+        if (directoryHandle) {
+            await saveBlobToDirectory(fileBlob, filename);
+        }
+    } else {
+        filename = `plower_memo_${timestamp}.txt`;
+        contentToSave = pasteAreaContent;
+        fileBlob = new Blob([contentToSave], { type: 'text/plain;charset=utf-8' });
     }
 
-    if (!contentToSave.trim()) {
-        alert("永続化するテキスト（OCR結果または貼付エリアの内容）がありません。");
+    if (!contentToSave) {
+        alert(isEn ? "No content to save." : "永続化する内容がありません。");
         return;
     }
 
-    // 3. LocalStorageに永続化 (ファイル名を付けて persistentDocuments に追加)
-    const now = new Date();
-    const pad = (num) => num.toString().padStart(2, '0');
-    const filename = `plower_memo_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`;
-    
     persistentDocuments.push({ name: filename, content: contentToSave });
-    saveDocuments();
+    await saveDocuments();
     
-    // 4. ローカルPCにダウンロード (エクスプローラへの保存)
-    const blob = new Blob([contentToSave], { type: 'text/plain;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // ファイルとしてダウンロード実行
+    if (fileBlob) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(fileBlob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
     
     // 5. UIのクリーンアップ
-    alert(`OCR/貼付テキストを「${filename}」として保存し、RAGソースとして永続化しました。`);
+    alert(isEn ? `Saved as "${filename}".` : `「${filename}」として保存し、RAGソースに追加しました。`);
     
     document.getElementById('pasteArea').value = '';
-    ocrDocuments = [];
+    currentImageBase64 = null;
     clearOcrDisplay(); // 重要な変更点：保存が完了したら画像とステータスをクリア
     updateFileListDisplay(); // ファイルリストを更新
 }
 
 
 // --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
-async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null) {
+async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null, imageData = null) {
     let result = '';
     let endpoint = '';
     let bodyData = {};
@@ -704,7 +706,12 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
                 console.log(`Trying Gemini model: ${modelVersion}`);
                 const currentEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelVersion}:generateContent?key=${apiKey}`;
                 const currentBody = {
-                    contents: [{ parts: [{ text: llmPrompt }] }],
+                    contents: [{ 
+                        parts: [
+                            { text: llmPrompt },
+                            ...(imageData ? [{ inline_data: { mime_type: "image/jpeg", data: imageData.split(',')[1] } }] : [])
+                        ] 
+                    }],
                     generationConfig: { temperature: 0.1 }
                 };
 
@@ -772,6 +779,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null)
             model: modelSelect,
             prompt: llmPrompt,
             stream: true,
+            images: imageData ? [imageData.split(',')[1]] : undefined,
             options: { temperature: 0.1, num_ctx: 4096 } // CPUリソースに合わせてコンテキスト窓を調整
         };
 
@@ -854,7 +862,7 @@ async function sendToModel() {
     chatLog.appendChild(responseParagraph);
 
     // 全てのRAGソースを統合
-    let allDocuments = [...persistentDocuments, ...ocrDocuments];
+    let allDocuments = [...persistentDocuments];
     if (pasteAreaContent) {
         // 貼り付けエリアのテキストは一時文書として扱う
         allDocuments.push({ name: '貼付けテキスト(一時)', content: pasteAreaContent });
@@ -888,10 +896,34 @@ ${userInput}`;
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
-        });
+        }, currentImageBase64);
 
         // 最終結果の表示 (非ストリーミングモデル用)
         responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${finalResult.replace(/\n/g, '<br>')}`;
+        
+        // 画像を解析に使用した場合、保存を提案する
+        if (currentImageBase64) {
+            const savePrompt = document.createElement('div');
+            savePrompt.style.marginTop = '15px';
+            savePrompt.style.padding = '10px';
+            savePrompt.style.border = '1px dashed #ccc';
+            savePrompt.innerHTML = `<p style="margin:0 0 10px 0; font-size:0.9em;">${isEn ? 'Analysis used an image. Save it locally?' : '画像を解析に使用しました。この画像をローカルに保存しますか？'}</p>`;
+            
+            const dlBtn = document.createElement('button');
+            dlBtn.textContent = isEn ? 'Save as JPG' : '画像をJPGで保存';
+            const imgDataToSave = currentImageBase64;
+            dlBtn.onclick = () => {
+                const link = document.createElement('a');
+                link.href = imgDataToSave;
+                link.download = `plower_analyzed_${Date.now()}.jpg`;
+                link.click();
+            };
+            savePrompt.appendChild(dlBtn);
+            responseParagraph.appendChild(savePrompt);
+            // 解析が終わったら画像キャッシュをクリア（次の質問で画像を使わないため）
+            currentImageBase64 = null;
+        }
+        
         userInputElement.value = ''; // 質問欄をクリア
 
     } catch (error) {
@@ -1040,7 +1072,4 @@ document.addEventListener('DOMContentLoaded', () => {
             sendToModel();
         }
     });
-
-    // ページロード時にバックグラウンドでOCRエンジンをDL・初期化開始
-    initOcrWorker().catch(() => { /* 初回失敗は無視し、実行時に再試行 */ });
 });
