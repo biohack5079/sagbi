@@ -55,9 +55,18 @@ async function loadDocuments() {
 async function saveDocuments() {
     try {
         const db = await openDB();
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
-        store.put(persistentDocuments, "plowerRAGDocs");
+        return new Promise((resolve, reject) => {
+            // 画像データは容量節約のため、IndexedDB保存時は内容を空にする
+            const docsToPersist = persistentDocuments.map(doc => ({
+                name: doc.name,
+                content: doc.content.startsWith('data:image/') ? "" : doc.content
+            }));
+            const tx = db.transaction(storeName, "readwrite");
+            const store = tx.objectStore(storeName);
+            const request = store.put(docsToPersist, "plowerRAGDocs");
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
     } catch (e) {
         console.error("Failed to save documents:", e);
     }
@@ -335,13 +344,16 @@ function renameDocument(index) {
     document.body.appendChild(overlay);
 
     // 入力欄にフォーカスし、拡張子を除いた部分を選択状態にする
-    input.focus();
-    const lastDotIndex = doc.name.lastIndexOf('.');
-    if (lastDotIndex > 0) {
-        input.setSelectionRange(0, lastDotIndex);
-    } else {
-        input.select();
-    }
+    setTimeout(() => {
+        input.focus();
+        const lastDotIndex = doc.name.lastIndexOf('.');
+        if (lastDotIndex > 0) {
+            // .png や .txt の手前までを選択
+            input.setSelectionRange(0, lastDotIndex);
+        } else {
+            input.select();
+        }
+    }, 10);
 
     // Enterキーで保存、Escapeでキャンセル
     input.addEventListener('keydown', (e) => {
@@ -416,10 +428,24 @@ async function loadFilesFromDirectory(isSilent = false) {
         async function readDirectoryRecursive(dirHandle, pathPrefix = '') {
             for await (const entry of dirHandle.values()) {
                 if (entry.kind === 'file') {
-                    if (/\.(txt|md|log|py|js|json|c|cpp|h|java|html|css|csv|rb|go|rs|php)$/i.test(entry.name)) {
+                    const isText = /\.(txt|md|log|py|js|json|c|cpp|h|java|html|css|csv|rb|go|rs|php)$/i.test(entry.name);
+                    const isImage = /\.(png|jpg|jpeg|webp|gif)$/i.test(entry.name);
+                    
+                    if (isText || isImage) {
                         try {
                             const file = await entry.getFile();
-                            const content = await file.text();
+                            let content;
+                            if (isText) {
+                                content = await file.text();
+                            } else {
+                                // 画像はData URLとして読み込む
+                                content = await new Promise((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onload = (e) => resolve(e.target.result);
+                                    reader.onerror = reject;
+                                    reader.readAsDataURL(file);
+                                });
+                            }
                             // パスを含めた名前で保存 (例: subfolder/file.txt)
                             scannedDocs.push({ name: pathPrefix + entry.name, content: content });
                         } catch (e) {
@@ -465,7 +491,7 @@ async function loadFilesFromDirectory(isSilent = false) {
         }
 
         if (changesMade) {
-            saveDocuments(); // LocalStorageに保存
+            await saveDocuments(); // IndexedDBに保存
             updateFileListDisplay(); // ファイル一覧を更新
             
             if (!isSilent) {
@@ -539,18 +565,22 @@ async function handlePaste(e) {
 async function processImageSource(fileOrBlob) {
     const isFile = fileOrBlob instanceof File;
     const name = isFile ? fileOrBlob.name : `pasted_image_${Date.now()}.png`;
-    const fileContentDiv = document.getElementById('fileContent');
 
+    // 1. 貼り付けた瞬間にまず保存するか確認する
+    const willPersist = confirm(isEn 
+        ? `Image "${name}" detected. Save this image to RAG source?` 
+        : `画像「${name}」を検出しました。この画像をRAGソース（永続ファイル）に保存しますか？`);
+
+    const fileContentDiv = document.getElementById('fileContent');
     const processingMessage = document.createElement('p');
     processingMessage.className = 'ocr-status';
     processingMessage.style.fontWeight = 'bold';
-    processingMessage.textContent = isEn ? `Image ready: ${name}` : `画像を確認しました: ${name}`;
+    processingMessage.textContent = isEn ? `Processing image: ${name}...` : `画像を処理中: ${name}...`;
     fileContentDiv.prepend(processingMessage);
 
     const reader = new FileReader();
     reader.onload = async function (event) {
         const base64Image = event.target.result;
-
         const container = document.createElement('div');
         container.style.margin = "10px 0";
         container.style.padding = "10px";
@@ -566,7 +596,7 @@ async function processImageSource(fileOrBlob) {
         container.appendChild(img);
 
         const dlBtn = document.createElement('button');
-        dlBtn.textContent = isEn ? 'Download as JPG' : 'JPGとして保存';
+        dlBtn.textContent = isEn ? 'Download as PNG' : 'PNGとして保存';
         dlBtn.style.padding = "5px 15px";
         
         // JPG変換ロジック
@@ -577,29 +607,27 @@ async function processImageSource(fileOrBlob) {
             canvas.height = tempImg.height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(tempImg, 0, 0);
-            const jpegUrl = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // LLM送信用およびプレビュー用 (PNGに統一)
+            const pngUrl = canvas.toDataURL('image/png');
             dlBtn.onclick = () => {
                 const link = document.createElement('a');
-                link.href = jpegUrl;
-                link.download = name.split('.')[0] + ".jpg";
+                link.href = pngUrl;
+                link.download = name.replace(/\.[^/.]+$/, "") + ".png";
                 link.click();
             };
-            currentImageBase64 = jpegUrl; // LLM送信用に保持
+            currentImageBase64 = pngUrl; // LLM送信用に保持
+
+            // 最初にOKを押していた場合は、準備ができ次第リネーム・保存プロセスへ
+            if (willPersist) {
+                saveOcrTextAsFile();
+            }
+            processingMessage.textContent = isEn ? `Image ready: ${name}` : `画像を確認しました: ${name}`;
         };
         tempImg.src = base64Image;
 
         container.appendChild(dlBtn);
         fileContentDiv.prepend(container);
-
-        // 解析を待たずに保存を確認
-        setTimeout(() => {
-            const msg = isEn 
-                ? `Image "${name}" detected. Save this image to RAG source?` 
-                : `画像「${name}」を検出しました。この画像をRAGソース（永続ファイル）に保存しますか？`;
-            if (confirm(msg)) {
-                saveOcrTextAsFile();
-            }
-        }, 100);
     };
     reader.readAsDataURL(fileOrBlob);
 }
@@ -614,15 +642,28 @@ async function saveOcrTextAsFile() {
     
     let contentToSave = '';
     let filename = '';
-    let fileBlob;
+    let fileBlob = null;
 
-    // 画像がある場合の処理
+    // 1. 名前決定（同期フォルダがあるためダイアログはスキップ）
+    filename = currentImageBase64 ? `plower_image_${timestamp}.png` : `plower_memo_${timestamp}.txt`;
+
+    // 2. データ生成プロセス
     if (currentImageBase64) {
         // 注意喚起
-        alert(isEn ? "Saved. This file will be referenced from the RAG source." : "保存しました。以降そこが参照されます。");
+        alert(isEn ? "Saving image locally. This file will be referenced from now on." : "保存しました。以降そこが参照されます。");
 
         const tempImg = new Image();
-        await new Promise(resolve => { tempImg.onload = resolve; tempImg.src = currentImageBase64; });
+        try {
+            await new Promise((resolve, reject) => { 
+                tempImg.onload = resolve; 
+                tempImg.onerror = reject;
+                tempImg.src = currentImageBase64; 
+            });
+        } catch (e) {
+            console.error("Failed to load image for JPG conversion:", e);
+            alert(isEn ? "Image processing failed." : "画像の処理に失敗しました。");
+            return;
+        }
         
         const canvas = document.createElement('canvas');
         canvas.width = tempImg.width;
@@ -630,49 +671,53 @@ async function saveOcrTextAsFile() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(tempImg, 0, 0);
 
-        // 1. ローカルフォルダ/ダウンロード用 (PNG)
-        filename = `plower_image_${timestamp}.png`;
+        // 全てPNG形式で処理
+        const downloadFilename = filename.endsWith('.png') ? filename : filename.replace(/\.[^/.]+$/, "") + '.png';
         const pngDataUrl = canvas.toDataURL('image/png');
+        contentToSave = pngDataUrl; // IndexedDB保存用にセット
+        
         const pngRes = await fetch(pngDataUrl);
         fileBlob = await pngRes.blob();
 
-        // 2. 内部ストレージ(IndexedDB)用 (JPG - 容量節キュ)
-        contentToSave = canvas.toDataURL('image/jpeg', 0.7);
-
-        // 同期フォルダがあればPNGを保存
+        // 同期フォルダがあればPNGファイルを保存
         if (directoryHandle) {
-            await saveBlobToDirectory(fileBlob, filename);
+            await saveBlobToDirectory(fileBlob, downloadFilename);
         }
     } else {
-        filename = `plower_memo_${timestamp}.txt`;
+        // テキストメモの場合
         contentToSave = pasteAreaContent;
         fileBlob = new Blob([contentToSave], { type: 'text/plain;charset=utf-8' });
     }
 
+    // 3. 永続化（IndexedDB）
     if (!contentToSave) {
         alert(isEn ? "No content to save." : "永続化する内容がありません。");
         return;
     }
-
     persistentDocuments.push({ name: filename, content: contentToSave });
     await saveDocuments();
     
-    // ファイルとしてダウンロード実行
+    // 4. ダウンロード実行
     if (fileBlob) {
+        const finalDownloadName = currentImageBase64 
+            ? (filename.endsWith('.png') ? filename : filename.replace(/\.[^/.]+$/, "") + '.png')
+            : filename;
+        
         const link = document.createElement('a');
         link.href = URL.createObjectURL(fileBlob);
-        link.download = filename;
+        link.download = finalDownloadName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     }
     
     // 5. UIのクリーンアップ
-    alert(isEn ? `Saved as "${filename}".` : `「${filename}」として保存し、RAGソースに追加しました。`);
+    alert(isEn ? `Saved as "${filename}". This file will be managed via the sync folder.` : `「${filename}」として保存し、RAGソースに追加しました。以降、同期フォルダから参照されます。`);
     
-    document.getElementById('pasteArea').value = '';
-    currentImageBase64 = null;
-    clearOcrDisplay(); // 重要な変更点：保存が完了したら画像とステータスをクリア
+    if (!currentImageBase64) {
+        document.getElementById('pasteArea').value = '';
+    }
+    // 保存が完了しても LLM 送信用に currentImageBase64 は維持し、UIもクリアしない（送信後にクリアされる）
     updateFileListDisplay(); // ファイルリストを更新
 }
 
