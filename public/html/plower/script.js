@@ -760,8 +760,8 @@ async function handlePaste(e) {
             const blob = items[i].getAsFile();
             if (blob) {
                 imageDetected = true;
-                // 非同期だが順番に処理
-                processImageSource(blob);
+                // 順番にダイアログを出すため await する
+                await processImageSource(blob);
             }
         }
     }
@@ -773,16 +773,18 @@ async function handlePaste(e) {
 
 // --- 画像プレビューとPNG保存準備処理 ---
 async function processImageSource(fileOrBlob) {
-    const now = new Date();
-    const pad = (num) => num.toString().padStart(2, '0');
-    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const getTimestamp = () => {
+        const now = new Date();
+        const pad = (num) => num.toString().padStart(2, '0');
+        return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    };
 
     const isFile = fileOrBlob instanceof File;
-    let name = isFile ? fileOrBlob.name : `plower_image_${timestamp}.png`;
+    let name = isFile ? fileOrBlob.name : `plower_image_${getTimestamp()}.png`;
     
     // genericな名前（image.pngやblob）はタイムスタンプ付きに強制変換
     if (name === "image.png" || name === "blob") {
-        name = `plower_image_${timestamp}.png`;
+        name = `plower_image_${getTimestamp()}.png`;
     }
 
     const pastePreview = document.getElementById('pastePreview');
@@ -832,14 +834,15 @@ async function processImageSource(fileOrBlob) {
     wrapper.appendChild(closeBtn);
     if (pastePreview) pastePreview.appendChild(wrapper);
 
-    // 3. RAGソースへの保存を確認（ここで await することでダイアログが順番に出るようにする）
-    const willPersist = confirm(isEn 
-        ? `Image "${name}" detected. Save this image to RAG source?` 
-        : `画像「${name}」を検出しました。この画像をRAGソースに保存しますか？`);
+    // 3. RAGソースへの保存を確認 (カスタムダイアログを表示)
+    const titleMsg = isEn 
+        ? `Save image to RAG source?` 
+        : `画像をRAGソースに保存しますか？`;
+    const finalName = await requestFileName(name, titleMsg);
 
-    if (willPersist) {
+    if (finalName) {
         try {
-            await saveSingleFile('image', base64Image, name);
+            await saveSingleFile('image', base64Image, finalName);
             await saveDocuments(); // IndexedDBには名前だけ、フォルダには実体を保存
             updateFileListDisplay();
             // 永続化したので一時リスト(プレビュー)から削除
@@ -851,23 +854,113 @@ async function processImageSource(fileOrBlob) {
     }
 }
 
+// ヘルパー: ファイル名入力を求めるカスタムダイアログ (拡張子以外を選択状態にする)
+function requestFileName(defaultName, titleMsg) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.zIndex = '3000';
+        overlay.style.display = 'flex';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '8px';
+        dialog.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+        dialog.style.minWidth = '300px';
+
+        const title = document.createElement('h3');
+        title.textContent = titleMsg;
+        title.style.marginTop = '0';
+        title.style.marginBottom = '15px';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = defaultName;
+        input.style.width = '100%';
+        input.style.padding = '8px';
+        input.style.marginBottom = '20px';
+        input.style.boxSizing = 'border-box';
+        input.style.fontSize = '16px';
+
+        const btnContainer = document.createElement('div');
+        btnContainer.style.display = 'flex';
+        btnContainer.style.justifyContent = 'flex-end';
+        btnContainer.style.gap = '10px';
+
+        const close = (val) => {
+            overlay.remove();
+            resolve(val);
+        };
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = isEn ? 'Cancel' : 'キャンセル';
+        cancelBtn.style.padding = '6px 12px';
+        cancelBtn.style.cursor = 'pointer';
+        cancelBtn.onclick = () => close(null);
+        
+        const okBtn = document.createElement('button');
+        okBtn.textContent = 'OK';
+        okBtn.style.padding = '6px 12px';
+        okBtn.style.cursor = 'pointer';
+        okBtn.onclick = () => close(input.value.trim() || defaultName);
+
+        btnContainer.appendChild(cancelBtn);
+        btnContainer.appendChild(okBtn);
+        dialog.appendChild(title);
+        dialog.appendChild(input);
+        dialog.appendChild(btnContainer);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        setTimeout(() => {
+            input.focus();
+            const lastDotIndex = defaultName.lastIndexOf('.');
+            if (lastDotIndex > 0) {
+                input.setSelectionRange(0, lastDotIndex);
+            } else {
+                input.select();
+            }
+        }, 10);
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') okBtn.click();
+            if (e.key === 'Escape') cancelBtn.click();
+        });
+    });
+}
+
 // --- 貼付画像・テキストのファイル保存と永続化 ---
 async function saveCurrentContentAsFile(specificName = null) {
     if (specificName instanceof Event) specificName = null;
 
     const pasteAreaContent = document.getElementById('pasteArea').value.trim();
-    const now = new Date();
-    const pad = (num) => num.toString().padStart(2, '0');
-    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    
+    const getTimestamp = () => {
+        const now = new Date();
+        const pad = (num) => num.toString().padStart(2, '0');
+        return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    };
+
     if (pasteAreaContent !== "") {
-        const fname = specificName || `plower_memo_${timestamp}.txt`;
-        await saveSingleFile('text', pasteAreaContent, fname);
+        const defaultName = specificName || `plower_memo_${getTimestamp()}.txt`;
+        const finalName = await requestFileName(defaultName, isEn ? "Name your memo:" : "メモの名前を入力してください:");
+        if (finalName) {
+            await saveSingleFile('text', pasteAreaContent, finalName);
+        }
     }
 
     for (let imgObj of pastedImages) {
-        const fname = `plower_image_${timestamp}_${Math.floor(Math.random()*1000)}.png`;
-        await saveSingleFile('image', imgObj.data, fname);
+        const finalName = await requestFileName(imgObj.name, isEn ? "Name your image:" : "画像の名前を入力してください:");
+        if (finalName) {
+            await saveSingleFile('image', imgObj.data, finalName);
+        }
     }
 
     if (pasteAreaContent === "" && pastedImages.length === 0) return;
