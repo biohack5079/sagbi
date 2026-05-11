@@ -432,56 +432,60 @@ async function loadFilesFromDirectory(isSilent = false) {
     }
 }
 
-// --- Tesseract.js OCR処理関数 (改善版: 詳細ステータス表示付き) ---
+// OCRエンジンの初期化状態を管理
+let isOcrInitializing = false;
+
+// OCRワーカーを事前に初期化する関数
+async function initOcrWorker(statusElement = null) {
+    if (worker) return worker;
+    if (isOcrInitializing) return null; // 初期化中なら何もしない
+
+    isOcrInitializing = true;
+    try {
+        const logger = m => {
+            if (!statusElement) return;
+            const progress = Math.round(m.progress * 100);
+            let statusText = '';
+            if (m.status === 'downloading tesseract core') statusText = `OCRエンジン(WASM)をDL中... (${progress}%)`;
+            else if (m.status === 'loading language traineddata') statusText = `言語データをロード中... (${progress}%)`;
+            else if (m.status === 'recognizing text') statusText = `テキスト認識中: ${progress}%`;
+            else statusText = `OCR準備中: ${m.status}`;
+            statusElement.innerHTML = `<div class="spinner"></div> ${statusText}`;
+        };
+
+        worker = await Tesseract.createWorker({ logger });
+        await worker.loadLanguage('jpn+eng');
+        await worker.initialize('jpn+eng');
+        console.log("OCR Worker initialized via WASM.");
+        return worker;
+    } catch (error) {
+        console.error("OCR Initialization Error:", error);
+        throw error;
+    } finally {
+        isOcrInitializing = false;
+    }
+}
+
+// --- Tesseract.js OCR処理関数 (改善版) ---
 async function runOcrOnImage(base64Image, statusElement) {
     try {
+        statusElement.style.color = 'orange';
+        
+        // すでに初期化中または未初期化の場合は、ここで待機/実行
         if (!worker) {
-            statusElement.innerHTML = '<div class="spinner"></div> OCRワーカーを初期化中... (1/3 初回時間がかかります)';
-            statusElement.style.color = 'orange';
-
-            // Tesseract Workerの作成 (ロガーを設定)
-            worker = await Tesseract.createWorker({
-                logger: m => {
-                    const progress = Math.round(m.progress * 100);
-                    let statusText = '';
-                    
-                    // 処理の進捗に合わせて詳細なメッセージを表示
-                    if (m.status === 'downloading tesseract core') {
-                        statusText = `OCRエンジンをダウンロード中... (${progress}%)`;
-                    } else if (m.status === 'loading tesseract core') {
-                        statusText = `OCRエンジンをロード中... (${progress}%)`;
-                    } else if (m.status === 'initializing api') {
-                        statusText = `APIを初期化中... (${progress}%)`;
-                    } else if (m.status === 'loading language traineddata') {
-                           statusText = `言語データ(jpn+eng)をロード中... (${progress}%)`;
-                    } else if (m.status === 'initializing api') {
-                           statusText = `OCR APIを初期化中... (${progress}%)`;
-                    } else if (m.status === 'recognizing text' && m.progress > 0) {
-                           // テキスト認識中の進捗
-                           statusText = `テキスト認識中: ${progress}%`;
-                           statusElement.style.color = 'blue'; 
-                    } else if (m.status) {
-                           statusText = `OCRステータス: ${m.status}`;
-                    } else {
-                        return; // 不要なログはスキップ
-                    }
-                    
-                    statusElement.innerHTML = `<div class="spinner"></div> ${statusText}`;
-                },
-            });
-            
-            // 言語ロードと初期化フェーズ
-            statusElement.innerHTML = '<div class="spinner"></div> 言語データをロード中 (jpn+eng)... (2/3)';
-            await worker.loadLanguage('jpn+eng'); 
-            
-            statusElement.innerHTML = '<div class="spinner"></div> OCRワーカーを初期化中... (3/3)';
-            await worker.initialize('jpn+eng');
-            
-            statusElement.textContent = 'OCRワーカーの初期化完了。テキスト認識中...';
+            await initOcrWorker(statusElement);
+        } else {
+            // 既存のワーカーに新しいロガー（今回の表示先）をセットする仕組みはないため、
+            // 認識中メッセージだけ表示
+            statusElement.innerHTML = '<div class="spinner"></div> テキストを認識中...';
         }
 
         // 認識フェーズ
         const { data: { text } } = await worker.recognize(base64Image);
+        if (statusElement) {
+            statusElement.style.color = 'green';
+            statusElement.textContent = '認識完了';
+        }
         return text;
     } catch (error) {
         console.error("Tesseract OCR Error:", error);
@@ -1036,4 +1040,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sendToModel();
         }
     });
+
+    // ページロード時にバックグラウンドでOCRエンジンをDL・初期化開始
+    initOcrWorker().catch(() => { /* 初回失敗は無視し、実行時に再試行 */ });
 });
