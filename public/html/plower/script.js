@@ -899,7 +899,23 @@ async function sendToModel() {
     // --- フロントエンドでの検索処理を廃止 ---
     // ユーザーの指示に基づき、ローカルでの検索や翻訳を行わず、全ての文書をコンテキストとしてLLMに渡す。
     console.log(`全ての文書(${allDocuments.length}件)をコンテキストとして使用します。`);
-    const context = allDocuments.map(doc => `File: ${doc.name}\nContent: ${doc.content}`).join('\n\n').slice(0, 15000); // 制限を少し緩和
+    
+    let imageDataToSend = currentImageBase64;
+
+    // 文書リストからテキストコンテキストを作成。
+    // 画像データ（Base64文字列）が混ざるとプロンプトが巨大になり、AIが混乱するため、[Image Data]というラベルに置き換える。
+    const context = allDocuments.map(doc => {
+        if (doc.content.startsWith('data:image/')) {
+            // 質問の中でファイル名が言及されている画像を優先的にVision入力として選択
+            const isMentioned = userInput.toLowerCase().includes(doc.name.toLowerCase()) || 
+                               userInput.toLowerCase().includes(doc.name.split('.')[0].toLowerCase());
+            if (isMentioned) {
+                imageDataToSend = doc.content;
+            }
+            return `File: ${doc.name}\nContent: [Image Data (Vision Input)]`;
+        }
+        return `File: ${doc.name}\nContent: ${doc.content}`;
+    }).join('\n\n').slice(0, 15000);
 
     // プロンプトの生成: 質問と同じ言語で回答させるための指示を明確化。
     // ブラウザの言語設定(isEn)に依存せず、常に同じ構造のプロンプトを渡すことで、モデルの動作を安定させます。
@@ -910,6 +926,7 @@ IMPORTANT INSTRUCTIONS:
 2.  Base your answer strictly on the information within the [Reference Documents]. Do not use any external knowledge.
 3.  **Language Handling:** The documents may be in a different language than the question. You must translate and interpret the documents to answer the question accurately.
 4.  If the answer cannot be found in the [Reference Documents], you MUST state that the information is not available, in the same language as the question.
+5.  **Visual Reference:** If an image (marked as [Image Data]) is requested, use the vision input to provide details.
 
 [Reference Documents]
 ${context}
@@ -924,7 +941,7 @@ ${userInput}`;
             // ストリーミング更新
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
             chatLog.scrollTop = chatLog.scrollHeight;
-        }, currentImageBase64);
+        }, imageDataToSend);
 
         // 最終結果の表示 (非ストリーミングモデル用)
         responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${finalResult.replace(/\n/g, '<br>')}`;
