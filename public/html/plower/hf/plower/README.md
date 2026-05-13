@@ -22,7 +22,7 @@ Plower enables users to interact with documents and pasted text using LLMs,
 while keeping data easily accessible and stored locally.
 
 The system supports multiple model backends, allowing users to choose between
-Google Gemma models and GPT-based models depending on their requirements.
+Google Gemma 3 models (INT4 optimized) and GPT-based models depending on their requirements.
 
 ## Key Design Principles
 
@@ -55,10 +55,11 @@ Running LLMs locally introduces significant constraints:
 These limitations were treated as explicit design constraints rather than flaws.
 The system was designed with future improvements in model efficiency and inference
 environments in mind.
+We use INT4 (4-bit) quantization to ensure stability on environments with limited RAM (e.g., Hugging Face Spaces).
 
 ## Technologies
 
 - Python
 - Local LLM runtimes
-- Google Gemma
+- Google Gemma 3 (Multimodal)
 - GPT-based models

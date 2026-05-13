@@ -15,10 +15,10 @@ sleep 5
 echo "🔴 モデルの準備を確認します..."
 
 # ビルド時に作成したカスタムモデルが存在するか確認
-echo "--- Checking gemma-3-4b-q8 ---"
-ollama list | grep gemma-3-4b-q8
+echo "--- Checking gemma3:4b-it-q4_K_M ---"
+ollama list | grep "gemma3:4b-it-q4_K_M"
 
-echo "🟢 すべてのモデルの準備が完了しました！ (Using: gemma-3-4b-q8)"
+echo "🟢 すべてのモデルの準備が完了しました！ (Using: gemma3:4b-it-q4_K_M)"
 
 # プロセスが終了しないように待機
 wait $pid
