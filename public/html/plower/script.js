@@ -593,8 +593,23 @@ async function processImageSource(fileOrBlob) {
         const tempImg = new Image();
         tempImg.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = tempImg.width;
-            canvas.height = tempImg.height;
+            // メモリ消費を抑えるため、最大サイズを1024pxに制限
+            const MAX_SIZE = 1024;
+            let width = tempImg.width;
+            let height = tempImg.height;
+            if (width > height) {
+                if (width > MAX_SIZE) {
+                    height *= MAX_SIZE / width;
+                    width = MAX_SIZE;
+                }
+            } else {
+                if (height > MAX_SIZE) {
+                    width *= MAX_SIZE / height;
+                    height = MAX_SIZE;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(tempImg, 0, 0);
             const jpegUrl = canvas.toDataURL('image/jpeg', 0.8);

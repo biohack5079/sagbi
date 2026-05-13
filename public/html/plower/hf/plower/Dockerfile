@@ -32,10 +32,7 @@ USER 1000
 # モデルのプリインストール (GGUFを直接ダウンロードしてカスタムモデルを作成)
 RUN (ollama serve &) && \
     until ollama list >/dev/null 2>&1; do sleep 1; done && \
-    curl -L "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf" -o model.gguf && \
-    echo "FROM model.gguf" > Modelfile && \
-    ollama create gemma3:4b-it-q4_K_M -f Modelfile && \
-    rm model.gguf Modelfile && \
+    ollama pull gemma3:4b-it-q4_K_M && \
     pkill ollama
 
 # 【重要】ベースイメージのENTRYPOINT（ollamaコマンドの自動実行）を無効化します
