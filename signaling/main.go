@@ -93,26 +93,69 @@ type WSMessage struct {
 }
 
 type ChatPayload struct {
-	Text string `json:"text"`
+	Text  string `json:"text"`
+	Image string `json:"image,omitempty"` // Base64 image
+	Lang  string `json:"lang,omitempty"`
 }
 
 // ── Ollama integration ───────────────────────────────────────
 type OllamaRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
+	Model  string   `json:"model"`
+	Prompt string   `json:"prompt"`
+	Stream bool     `json:"stream"`
+	Images []string `json:"images,omitempty"`
 }
 
 type OllamaResponse struct {
 	Response string `json:"response"`
 }
 
-func queryOllama(prompt string) (string, error) {
-	reqBody, _ := json.Marshal(OllamaRequest{
+// searchRAG reads text files from the rag/ directory and returns relevant snippets
+func searchRAG(query string) string {
+	ragDir := "rag"
+	_ = os.MkdirAll(ragDir, 0755) // Ensure dir exists
+	files, err := os.ReadDir(ragDir)
+	if err != nil {
+		return ""
+	}
+
+	var context bytes.Buffer
+	for _, file := range files {
+		if !file.IsDir() && (len(file.Name()) > 4 && file.Name()[len(file.Name())-4:] == ".txt") {
+			content, err := os.ReadFile(ragDir + "/" + file.Name())
+			if err == nil {
+				context.WriteString(string(content) + "\n---\n")
+			}
+		}
+	}
+	return context.String()
+}
+
+func queryOllama(payload ChatPayload) (string, error) {
+	prompt := payload.Text
+
+	// Inject RAG context if available
+	context := searchRAG(payload.Text)
+	if context != "" {
+		prompt = "Context information:\n" + context + "\n\nUser Question: " + payload.Text
+	}
+
+	ollamaReq := OllamaRequest{
 		Model:  ollamaModel,
 		Prompt: prompt,
 		Stream: false,
-	})
+	}
+
+	// Add image if present (strip data:image/png;base64, prefix if exists)
+	if payload.Image != "" {
+		imgData := payload.Image
+		if idx := bytes.Index([]byte(imgData), []byte(",")); idx != -1 {
+			imgData = imgData[idx+1:]
+		}
+		ollamaReq.Images = []string{imgData}
+	}
+
+	reqBody, _ := json.Marshal(ollamaReq)
 
 	client := &http.Client{Timeout: 300 * time.Second}
 	resp, err := client.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
@@ -123,8 +166,9 @@ func queryOllama(prompt string) (string, error) {
 
 	var result OllamaResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("ollama decode error: %w", err)
+		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
+
 	return result.Response, nil
 }
 
@@ -178,14 +222,14 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 		case "chat_message":
 			var p ChatPayload
-			if err := json.Unmarshal(msg.Payload, &p); err != nil || p.Text == "" {
+			if err := json.Unmarshal(msg.Payload, &p); err != nil {
 				continue
 			}
-			log.Printf("[Chat] %s: %s", c.id, p.Text)
+			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
 			// Query Ollama in background
-			go func(client *Client, question string) {
-				answer, err := queryOllama(question)
+			go func(client *Client, payload ChatPayload) {
+				answer, err := queryOllama(payload)
 				if err != nil {
 					log.Printf("[Ollama] Error: %v", err)
 					answer = "申し訳ありません、AIサービスに接続できませんでした。"
@@ -195,15 +239,15 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					Type: "chat_response",
 					From: "sagbi-agi",
 				}
-				payload, _ := json.Marshal(ChatPayload{Text: answer})
-				resp.Payload = payload
+				respPayload, _ := json.Marshal(ChatPayload{Text: answer})
+				resp.Payload = respPayload
 				respBytes, _ := json.Marshal(resp)
 
 				select {
 				case client.send <- respBytes:
 				default:
 				}
-			}(c, p.Text)
+			}(c, p)
 
 		case "signal":
 			// Forward signaling messages (offer/answer/candidate) to target
