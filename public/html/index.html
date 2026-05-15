@@ -145,7 +145,7 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
     padding: 12px 16px;
     background: linear-gradient(135deg, rgba(209,100,119,0.85), rgba(255,142,180,0.65));
     user-select: none;
-    cursor: move;
+    cursor: move !important;
 }
 #chat-header h3 {
     margin: 0; color: #fff; font-size: 14px; font-weight: 600; letter-spacing: 0.5px;
@@ -306,6 +306,14 @@ function x(){
 }
 function re() { document.fm.reset(); }
 
+</script>
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+}
 </script>
 </head>
 <body>

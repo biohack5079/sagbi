@@ -1,5 +1,5 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 /**
  * SAGBI AGI Chat Module - Multimodal & Bilingual App Version
@@ -124,7 +124,7 @@ function initFloatingUI() {
   if (saved.collapsed) chatSidebar.classList.add('collapsed');
 
   // ヘッダー全体のクリック・ドラッグに対応
-  chatHeader.addEventListener('mousedown', dragMouseDown);
+  chatHeader.onmousedown = dragMouseDown;
 
   function dragMouseDown(e) {
     // ボタンをクリックした時はドラッグしない
@@ -135,8 +135,8 @@ function initFloatingUI() {
     pos4 = e.clientY;
     isDragging = false;
     
-    document.addEventListener('mouseup', closeDragElement);
-    document.addEventListener('mousemove', elementDrag);
+    document.onmouseup = closeDragElement;
+    document.onmousemove = elementDrag;
   }
 
   function elementDrag(e) {
@@ -155,8 +155,8 @@ function initFloatingUI() {
   }
 
   function closeDragElement() {
-    document.removeEventListener('mouseup', closeDragElement);
-    document.removeEventListener('mousemove', elementDrag);
+    document.onmouseup = null;
+    document.onmousemove = null;
     
     // ドラッグしていなければ（単なるクリックなら）最小化切り替え
     if (!isDragging) {
