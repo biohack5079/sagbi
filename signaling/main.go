@@ -255,6 +255,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			c.role = p.Role
 			log.Printf("[WS] %s registered as %s", c.id, c.role)
 
+		case "log":
+			var l string
+			_ = json.Unmarshal(msg.Payload, &l)
+			fmt.Printf("[BROWSER] %s\n", l)
+
 		case "chat_message":
 			var p ChatPayload
 			if err := json.Unmarshal(msg.Payload, &p); err != nil {

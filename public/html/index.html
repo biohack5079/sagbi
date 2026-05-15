@@ -468,6 +468,79 @@ function re() { document.fm.reset(); }
 </div>
 
 
+<script>
+  // --- Remote Logger ---
+  function terminalLog(msg) {
+    console.log(msg);
+    if (window.sagbiWS && window.sagbiWS.readyState === 1) {
+      window.sagbiWS.send(JSON.stringify({ type: 'log', payload: msg }));
+    }
+  }
+  window.onerror = (m, u, l) => terminalLog(`[ERROR] ${m} at line ${l}`);
+
+  // --- UI Elements ---
+  const chatSidebar = document.getElementById('chat-sidebar');
+  const chatHeader = document.getElementById('chat-header');
+  const chatCloseBtn = document.getElementById('chat-close-btn');
+  const chatInput = document.getElementById('chat-input');
+  const chatSendBtn = document.getElementById('chat-send-btn');
+  const camBtn = document.getElementById('cam-btn');
+  const micBtn = document.getElementById('mic-btn');
+  const fileBtn = document.getElementById('file-btn');
+  const fileInput = document.getElementById('hidden-file-input');
+
+  // --- Drag Logic ---
+  let isDragging = false;
+  chatHeader.onmousedown = (e) => {
+    if (e.target.closest('.chat-btn')) return;
+    e.preventDefault();
+    let pos3 = e.clientX, pos4 = e.clientY;
+    document.onmousemove = (ev) => {
+      isDragging = true;
+      let pos1 = pos3 - ev.clientX, pos2 = pos4 - ev.clientY;
+      pos3 = ev.clientX; pos4 = ev.clientY;
+      chatSidebar.style.top = (chatSidebar.offsetTop - pos2) + "px";
+      chatSidebar.style.left = (chatSidebar.offsetLeft - pos1) + "px";
+    };
+    document.onmouseup = () => {
+      document.onmousemove = null; document.onmouseup = null;
+      saveChatState();
+    };
+  };
+
+  // --- Resize & State ---
+  function saveChatState() {
+    const s = {
+      top: chatSidebar.style.top, left: chatSidebar.style.left,
+      width: chatSidebar.style.width, height: chatSidebar.style.height,
+      collapsed: chatSidebar.classList.contains('collapsed')
+    };
+    localStorage.setItem('sagbiChatState', JSON.stringify(s));
+  }
+  new ResizeObserver(saveChatState).observe(chatSidebar);
+
+  chatCloseBtn.onclick = () => {
+    chatSidebar.classList.toggle('collapsed');
+    saveChatState();
+  };
+
+  // --- Button Handlers ---
+  if (camBtn) camBtn.onclick = () => camBtn.classList.toggle('active');
+  if (micBtn) micBtn.onclick = () => micBtn.classList.toggle('active');
+  if (fileBtn) fileBtn.onclick = () => fileInput.click();
+
+  // --- Position Init ---
+  window.addEventListener('load', () => {
+    const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
+    if (saved.top) {
+      chatSidebar.style.top = saved.top; chatSidebar.style.left = saved.left;
+      chatSidebar.style.width = saved.width; chatSidebar.style.height = saved.height;
+      if (saved.collapsed) chatSidebar.classList.add('collapsed');
+    }
+    terminalLog("UI Initialized and ready.");
+  });
+</script>
+
 <script type="module" src="chat.js"></script>
 </body>
 </html>
