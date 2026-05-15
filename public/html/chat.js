@@ -204,19 +204,23 @@ function connectWS() {
   ws.onopen = () => {
     isConnected = true;
     chatStatus.style.background = '#4caf50'; // Online
+    screenLog('[SAGBI] WebSocket Connected!');
     ws.send(JSON.stringify({ type: 'register', payload: { role: 'web_chat' } }));
   };
   ws.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
-    if (msg.type === 'chat_response') {
-      const text = parseGestures(msg.payload?.text || '...');
-      addMessage(text, false);
-      animateAgent('talk');
-    }
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'chat_response') {
+        const text = parseGestures(msg.payload?.text || '...');
+        addMessage(text, false);
+        animateAgent('talk');
+      }
+    } catch (e) { screenLog(`[SAGBI] WS Message Error: ${e.message}`); }
   };
   ws.onclose = () => {
     isConnected = false;
     chatStatus.style.background = '#f44336'; // Offline
+    screenLog('[SAGBI] WebSocket Closed. Retrying in 3s...');
     setTimeout(connectWS, 3000);
   };
 }
@@ -283,22 +287,45 @@ function addMessage(text, isUser, isSystem = false) {
 
 // --- Three.js & Agent Visualization ---
 function initThreeAgent() {
-  const W = agentCanvas.clientWidth || 300, H = 220;
-  threeScene = new THREE.Scene();
-  threeCamera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
-  threeCamera.position.set(0, 1.3, 3.5);
-  threeRenderer = new THREE.WebGLRenderer({ canvas: agentCanvas, alpha: true, antialias: true });
-  threeRenderer.setSize(W, H);
-  threeScene.add(new THREE.AmbientLight(0xffffff, 0.8));
-  
-  const loader = new GLTFLoader();
-  loader.load(GLB_MODEL_PATH, (gltf) => {
-    threeModel = gltf.scene;
-    threeScene.add(threeModel);
-  });
-  
-  threeClock = new THREE.Clock();
-  animateThree();
+  try {
+    const W = agentCanvas.clientWidth || 300, H = 220;
+    screenLog(`[SAGBI] Canvas size: ${W}x${H}`);
+    
+    threeScene = new THREE.Scene();
+    threeCamera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
+    threeCamera.position.set(0, 1.3, 3.5);
+    
+    screenLog('[SAGBI] Creating WebGLRenderer...');
+    threeRenderer = new THREE.WebGLRenderer({ canvas: agentCanvas, alpha: true, antialias: true });
+    threeRenderer.setSize(W, H);
+    
+    threeScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+    dirLight.position.set(1, 2, 1);
+    threeScene.add(dirLight);
+    
+    threeClock = new THREE.Clock();
+    screenLog(`[SAGBI] Loading Model: ${GLB_MODEL_PATH}`);
+    
+    const loader = new GLTFLoader();
+    loader.load(GLB_MODEL_PATH, (gltf) => {
+      screenLog('[SAGBI] Model Loaded successfully!');
+      threeModel = gltf.scene;
+      threeScene.add(threeModel);
+    }, (xhr) => {
+      if (xhr.total > 0) {
+        const percent = Math.round(xhr.loaded / xhr.total * 100);
+        if (percent % 25 === 0) screenLog(`[SAGBI] Model loading: ${percent}%`);
+      }
+    }, (err) => {
+      screenLog(`[SAGBI] Model Load ERROR: ${err.message || 'Unknown'}`);
+    });
+    
+    animateThree();
+    screenLog('[SAGBI] Three.js loop started');
+  } catch (e) {
+    screenLog(`[SAGBI] initThreeAgent inner error: ${e.message}`);
+  }
 }
 
 function animateThree() {
