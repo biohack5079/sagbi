@@ -22,6 +22,7 @@ const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const chatSendBtn = document.getElementById('chat-send-btn');
 const chatStatus = document.getElementById('chat-status-dot');
+const chatCloseBtn = document.getElementById('chat-close-btn');
 const agentCanvas = document.getElementById('agent-canvas');
 
 // --- Global State ---
@@ -31,6 +32,35 @@ let currentImageBase64 = null;
 let threeScene, threeCamera, threeRenderer, threeClock, threeModel;
 let isDragging = false;
 let deferredPrompt = null;
+
+// --- Core Chat Functions ---
+function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text && !currentImageBase64) return;
+
+  addMessage(text, true);
+  if (isConnected) {
+    ws.send(JSON.stringify({
+      type: 'chat',
+      payload: { text, image: currentImageBase64, lang }
+    }));
+  } else {
+    addMessage("サーバーに接続されていません。再試行中...", false, true);
+  }
+
+  chatInput.value = '';
+  currentImageBase64 = null;
+  const fileBtn = document.getElementById('file-btn');
+  if (fileBtn) fileBtn.classList.remove('active');
+}
+
+chatSendBtn.onclick = sendMessage;
+chatInput.onkeydown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+};
 
 // --- Gestures (G1:M compatible) ---
 const GESTURES = {
@@ -46,16 +76,18 @@ document.addEventListener('DOMContentLoaded', () => {
   connectWS();
   if (agentCanvas) {
     try {
-      screenLog('[SAGBI] Initializing 3D Agent...');
       initThreeAgent();
     } catch (e) {
-      screenLog(`[SAGBI] 3D Init failed: ${e.message}`);
+      console.warn('3D Init failed:', e);
     }
   }
   
-  // Welcome message
-  const msg = lang === 'ja' ? "SAGBI DANCE FLOORへようこそ！何をお手伝いしようか？" : "Welcome to SAGBI DANCE FLOOR! How can I help you today?";
-  addMessage(msg, false);
+  // Welcome message with stability delay
+  setTimeout(() => {
+    const msg = lang === 'ja' ? "SAGBI DANCE FLOORへようこそ！何をお手伝いしようか？" : "Welcome to SAGBI DANCE FLOOR! How can I help you today?";
+    addMessage(msg, false);
+  }, 500);
+});
 
   // Event Listeners
   chatSendBtn.onclick = sendMessage;
@@ -117,9 +149,14 @@ function initFloatingUI() {
     function closeDragElement() {
       document.removeEventListener('mousemove', elementDrag);
       document.removeEventListener('mouseup', closeDragElement);
-      if (!isDragging) chatSidebar.classList.toggle('collapsed');
       saveState();
     }
+
+    // Toggle Collapse only via specific button
+    chatCloseBtn.onclick = () => {
+      chatSidebar.classList.toggle('collapsed');
+      saveState();
+    };
 
     function saveState() {
       localStorage.setItem('sagbiChatState', JSON.stringify({
