@@ -1,0 +1,261 @@
+/**
+ * SAGBI Installer — Windows exe source (C++ / Win32 API)
+ *
+ * This installer:
+ *   1. Downloads and installs Ollama
+ *   2. Pulls the default model (gemma3:4b-it-q4_K_M)
+ *   3. Allows adding additional models
+ *   4. Opens the SAGBI AGI homepage on completion
+ *
+ * Build with MSVC:
+ *   cl /EHsc /Fe:sagbi_install.exe sagbi_installer.cpp
+ *      shell32.lib urlmon.lib user32.lib
+ *
+ * Build with MinGW:
+ *   x86_64-w64-mingw32-g++ -o sagbi_install.exe sagbi_installer.cpp
+ *      -lshell32 -lurlmon -luser32 -mwindows -static
+ */
+
+#include <windows.h>
+#include <urlmon.h>
+#include <shellapi.h>
+#include <string>
+#include <sstream>
+#include <vector>
+
+#pragma comment(lib, "urlmon.lib")
+#pragma comment(lib, "shell32.lib")
+
+// ── Configuration ────────────────────────────────────────────
+static const wchar_t* OLLAMA_DOWNLOAD_URL =
+    L"https://ollama.com/download/OllamaSetup.exe";
+static const wchar_t* DEFAULT_MODEL = L"gemma3:4b-it-q4_K_M";
+static const wchar_t* SAGBI_URL     = L"https://sagbuntu.web.app/";
+static const wchar_t* WINDOW_TITLE  = L"SAGBI AGI Installer";
+
+// Control IDs
+#define IDC_STATUS_LABEL  2001
+#define IDC_PROGRESS_LABEL 2002
+#define IDC_INSTALL_BTN    2003
+#define IDC_MODEL_EDIT     2004
+#define IDC_ADD_MODEL_BTN  2005
+#define IDC_MODEL_LIST     2006
+#define IDC_OPEN_HP_BTN    2007
+
+// ── Globals ──────────────────────────────────────────────────
+static HWND hStatus, hProgress, hInstallBtn, hModelEdit, hAddModelBtn;
+static HWND hModelList, hOpenHpBtn;
+static std::vector<std::wstring> additionalModels;
+static bool installComplete = false;
+
+// ── Helpers ──────────────────────────────────────────────────
+void setStatus(const wchar_t* text) {
+    SetWindowTextW(hStatus, text);
+}
+
+void setProgress(const wchar_t* text) {
+    SetWindowTextW(hProgress, text);
+}
+
+bool downloadFile(const wchar_t* url, const wchar_t* dest) {
+    HRESULT hr = URLDownloadToFileW(NULL, url, dest, 0, NULL);
+    return SUCCEEDED(hr);
+}
+
+bool runCommand(const wchar_t* cmd, bool wait = true) {
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    std::wstring cmdStr(cmd);
+    // CreateProcessW needs mutable buffer
+    std::vector<wchar_t> buf(cmdStr.begin(), cmdStr.end());
+    buf.push_back(0);
+
+    if (!CreateProcessW(NULL, buf.data(), NULL, NULL, FALSE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        return false;
+    }
+    if (wait) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+    }
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return true;
+}
+
+// ── Install worker (runs in a thread) ────────────────────────
+DWORD WINAPI installWorker(LPVOID lpParam) {
+    HWND hwnd = (HWND)lpParam;
+
+    // Step 1: Download Ollama installer
+    setStatus(L"Ollama をダウンロード中…");
+    setProgress(L"[1/3] Downloading OllamaSetup.exe");
+
+    wchar_t tempPath[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempPath);
+    std::wstring installerPath = std::wstring(tempPath) + L"OllamaSetup.exe";
+
+    if (!downloadFile(OLLAMA_DOWNLOAD_URL, installerPath.c_str())) {
+        setStatus(L"❌ Ollama のダウンロードに失敗しました");
+        setProgress(L"");
+        EnableWindow(hInstallBtn, TRUE);
+        return 1;
+    }
+
+    // Step 2: Run Ollama installer (silent)
+    setStatus(L"Ollama をインストール中…");
+    setProgress(L"[2/3] Installing Ollama");
+
+    std::wstring installCmd = L"\"" + installerPath + L"\" /SILENT /NORESTART";
+    if (!runCommand(installCmd.c_str())) {
+        setStatus(L"❌ Ollama インストールに失敗しました");
+        setProgress(L"");
+        EnableWindow(hInstallBtn, TRUE);
+        return 1;
+    }
+
+    // Give Ollama service time to start
+    Sleep(3000);
+
+    // Step 3: Pull default model
+    setStatus(L"デフォルトモデルを取得中…");
+    std::wstring pullCmd = L"ollama pull ";
+    pullCmd += DEFAULT_MODEL;
+    setProgress((std::wstring(L"[3/3] ollama pull ") + DEFAULT_MODEL).c_str());
+
+    if (!runCommand(pullCmd.c_str())) {
+        setStatus(L"⚠ モデル取得に失敗 — 手動で実行してください");
+    }
+
+    // Pull additional models
+    for (size_t i = 0; i < additionalModels.size(); i++) {
+        std::wostringstream oss;
+        oss << L"追加モデル取得中: " << additionalModels[i]
+            << L" (" << (i + 1) << L"/" << additionalModels.size() << L")";
+        setStatus(oss.str().c_str());
+        std::wstring cmd = L"ollama pull " + additionalModels[i];
+        runCommand(cmd.c_str());
+    }
+
+    setStatus(L"✅ インストール完了！");
+    setProgress(L"SAGBI AGI を開くにはボタンをクリック");
+    installComplete = true;
+    EnableWindow(hOpenHpBtn, TRUE);
+    EnableWindow(hInstallBtn, TRUE);
+    return 0;
+}
+
+// ── Window Procedure ─────────────────────────────────────────
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_CREATE: {
+        const DWORD sStyle = WS_VISIBLE | WS_CHILD;
+
+        // Title
+        CreateWindowW(L"STATIC", L"🤖 SAGBI AGI Installer",
+            sStyle | SS_CENTER, 20, 15, 440, 30, hwnd, NULL, NULL, NULL);
+
+        // Description
+        CreateWindowW(L"STATIC",
+            L"Ollama + gemma3 モデルを自動インストールします。\n"
+            L"追加モデルがあれば下に入力してください。",
+            sStyle, 20, 50, 440, 40, hwnd, NULL, NULL, NULL);
+
+        // Model input
+        CreateWindowW(L"STATIC", L"追加モデル名:",
+            sStyle, 20, 100, 100, 25, hwnd, NULL, NULL, NULL);
+        hModelEdit = CreateWindowW(L"EDIT", L"",
+            sStyle | WS_BORDER | ES_AUTOHSCROLL,
+            125, 98, 220, 25, hwnd, (HMENU)IDC_MODEL_EDIT, NULL, NULL);
+        hAddModelBtn = CreateWindowW(L"BUTTON", L"追加",
+            sStyle, 355, 97, 80, 27, hwnd, (HMENU)IDC_ADD_MODEL_BTN, NULL, NULL);
+
+        // Model list
+        hModelList = CreateWindowW(L"LISTBOX", L"",
+            sStyle | WS_BORDER | LBS_NOINTEGRALHEIGHT,
+            20, 130, 440, 70, hwnd, (HMENU)IDC_MODEL_LIST, NULL, NULL);
+        SendMessageW(hModelList, LB_ADDSTRING, 0,
+            (LPARAM)(std::wstring(L"[default] ") + DEFAULT_MODEL).c_str());
+
+        // Status
+        hStatus = CreateWindowW(L"STATIC", L"準備完了",
+            sStyle, 20, 210, 440, 25, hwnd, (HMENU)IDC_STATUS_LABEL, NULL, NULL);
+        hProgress = CreateWindowW(L"STATIC", L"",
+            sStyle, 20, 235, 440, 25, hwnd, (HMENU)IDC_PROGRESS_LABEL, NULL, NULL);
+
+        // Buttons
+        hInstallBtn = CreateWindowW(L"BUTTON", L"📥 インストール開始",
+            sStyle | BS_DEFPUSHBUTTON, 20, 270, 200, 35,
+            hwnd, (HMENU)IDC_INSTALL_BTN, NULL, NULL);
+        hOpenHpBtn = CreateWindowW(L"BUTTON", L"🌐 SAGBI AGI を開く",
+            sStyle, 240, 270, 200, 35,
+            hwnd, (HMENU)IDC_OPEN_HP_BTN, NULL, NULL);
+        EnableWindow(hOpenHpBtn, FALSE);
+
+        break;
+    }
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDC_ADD_MODEL_BTN: {
+            wchar_t buf[256];
+            GetWindowTextW(hModelEdit, buf, 256);
+            std::wstring model(buf);
+            if (!model.empty()) {
+                additionalModels.push_back(model);
+                SendMessageW(hModelList, LB_ADDSTRING, 0,
+                    (LPARAM)(L"[追加] " + model).c_str());
+                SetWindowTextW(hModelEdit, L"");
+            }
+            break;
+        }
+        case IDC_INSTALL_BTN:
+            EnableWindow(hInstallBtn, FALSE);
+            CreateThread(NULL, 0, installWorker, hwnd, 0, NULL);
+            break;
+        case IDC_OPEN_HP_BTN:
+            ShellExecuteW(NULL, L"open", SAGBI_URL, NULL, NULL, SW_SHOWNORMAL);
+            break;
+        }
+        break;
+
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+
+    default:
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+// ── Entry Point ──────────────────────────────────────────────
+int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nShow) {
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInst;
+    wc.lpszClassName = L"SAGBIInstaller";
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+
+    if (!RegisterClassW(&wc)) {
+        MessageBoxW(NULL, L"ウィンドウクラス登録に失敗", WINDOW_TITLE, MB_ICONERROR);
+        return 1;
+    }
+
+    HWND hwnd = CreateWindowExW(
+        0, L"SAGBIInstaller", WINDOW_TITLE,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT, 500, 350,
+        NULL, NULL, hInst, NULL);
+
+    if (!hwnd) {
+        MessageBoxW(NULL, L"ウィンドウ作成に失敗", WINDOW_TITLE, MB_ICONERROR);
+        return 1;
+    }
+
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+    return 0;
+}

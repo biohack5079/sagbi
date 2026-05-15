@@ -3,34 +3,69 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SAGBI AGI — 分散AIエージェントプラットフォーム。みんなのPCを繋いで巨大なAIを動かす。">
 <title>SAGBI AGI</title>
-<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* refer0421.html (JINテーマ) の配色と構造を再現 */
+/* ── Design Tokens ───────────────────────────────────── */
 :root {
     --primary-color: #ff8eb4;
+    --primary-dark: #d16477;
     --nav-bg: #d16477;
     --text-color: #333;
     --bg-color: #f7f7f7;
     --border-color: #eee;
+    /* Chat palette */
+    --chat-bg: rgba(18, 18, 30, 0.92);
+    --chat-surface: rgba(255, 255, 255, 0.06);
+    --chat-user-bg: linear-gradient(135deg, #ff8eb4, #d16477);
+    --chat-bot-bg: rgba(255, 255, 255, 0.1);
+    --chat-text: #f0f0f5;
+    --chat-accent: #ff8eb4;
+    --chat-glow: rgba(255, 142, 180, 0.25);
 }
 
 body {
     margin: 0;
     background-color: var(--bg-color);
     color: var(--text-color);
-    font-family: "Quicksand", sans-serif;
+    font-family: "Quicksand", "Inter", sans-serif;
     line-height: 1.8;
 }
 
-#header-box { background: #fff; padding: 30px 20px; text-align: center; border-bottom: 1px solid var(--border-color); }
-#site-info a { font-size: 24px; font-weight: bold; text-decoration: none; color: var(--text-color); }
+/* ── Header ──────────────────────────────────────────── */
+#header-box {
+    background: #fff;
+    padding: 30px 20px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+    position: relative;
+}
+#site-info a {
+    font-size: 24px;
+    font-weight: bold;
+    text-decoration: none;
+    color: var(--text-color);
+    letter-spacing: 2px;
+}
 
+/* ── Navigation ──────────────────────────────────────── */
 #nav-container { background: var(--nav-bg); padding: 10px 0; }
-.menu-box { display: flex; justify-content: center; list-style: none; margin: 0; padding: 0; }
+.menu-box { display: flex; justify-content: center; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
 .menu-box li { margin: 0 15px; }
-.menu-box a { color: #fff; text-decoration: none; font-size: 14px; font-weight: bold; }
+.menu-box a {
+    color: #fff; text-decoration: none; font-size: 14px; font-weight: bold;
+    transition: opacity 0.2s, transform 0.2s;
+}
+.menu-box a:hover { opacity: 0.85; transform: translateY(-1px); }
+.menu-box a[download] {
+    background: rgba(255,255,255,0.18);
+    padding: 4px 14px;
+    border-radius: 16px;
+    backdrop-filter: blur(4px);
+}
 
+/* ── Main content ────────────────────────────────────── */
 #contents { max-width: 1100px; margin: 40px auto; display: flex; flex-wrap: wrap; padding: 0 20px; gap: 30px; }
 #main-contents { flex: 1; min-width: 300px; }
 .cps-post-main { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
@@ -42,6 +77,7 @@ body {
 
 h2 { border-left: 5px solid var(--primary-color); padding: 5px 15px; margin: 30px 0 15px; font-size: 1.2rem; background: #fafafa; }
 
+/* ── Sidebar ─────────────────────────────────────────── */
 #sidebar { width: 300px; }
 .widget { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 8px; border: 1px solid var(--border-color); }
 .widgettitle { font-weight: bold; border-bottom: 2px solid var(--primary-color); margin-bottom: 15px; padding-bottom: 5px; }
@@ -53,6 +89,164 @@ button:hover { opacity: 0.8; }
 footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size: 12px; color: #666; }
 
 @media (max-width: 850px) { #contents { flex-direction: column; } #sidebar { width: 100%; } }
+
+/* ══════════════════════════════════════════════════════
+   Chat Sidebar  (glassmorphism floating panel)
+   ══════════════════════════════════════════════════════ */
+#chat-sidebar {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 340px;
+    max-height: 580px;
+    background: var(--chat-bg);
+    border-radius: 18px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+    backdrop-filter: blur(16px);
+    display: flex;
+    flex-direction: column;
+    z-index: 9999;
+    overflow: hidden;
+    font-family: "Inter", sans-serif;
+    transition: transform 0.35s cubic-bezier(.4,0,.2,1), opacity 0.35s;
+    transform: translateY(0);
+    opacity: 1;
+}
+#chat-sidebar.collapsed {
+    transform: translateY(calc(100% - 52px));
+}
+
+/* Header */
+#chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(209,100,119,0.85), rgba(255,142,180,0.65));
+    cursor: pointer;
+    user-select: none;
+}
+#chat-header h3 {
+    margin: 0; color: #fff; font-size: 14px; font-weight: 600; letter-spacing: 0.5px;
+}
+.chat-status {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8);
+}
+.chat-status.online  { background: rgba(76,175,80,0.35); color: #a5d6a7; }
+.chat-status.offline { background: rgba(244,67,54,0.25); color: #ef9a9a; }
+.chat-status.connecting { background: rgba(255,193,7,0.3); color: #fff9c4; }
+
+/* Agent preview */
+#agent-preview {
+    height: 180px;
+    background: radial-gradient(ellipse at bottom, rgba(255,142,180,0.12), transparent 70%);
+    position: relative;
+    overflow: hidden;
+}
+#agent-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Messages area */
+#chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 14px;
+    min-height: 120px;
+    max-height: 220px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+#chat-messages::-webkit-scrollbar { width: 4px; }
+#chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+.chat-bubble {
+    padding: 8px 14px;
+    border-radius: 14px;
+    margin-bottom: 8px;
+    max-width: 85%;
+    font-size: 13px;
+    line-height: 1.5;
+    animation: bubbleIn 0.3s ease-out;
+    word-break: break-word;
+}
+.chat-bubble.user {
+    background: var(--chat-user-bg);
+    color: #fff;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+.chat-bubble.bot {
+    background: var(--chat-bot-bg);
+    color: var(--chat-text);
+    border-bottom-left-radius: 4px;
+}
+.chat-bubble.system {
+    background: transparent;
+    color: rgba(255,255,255,0.4);
+    font-size: 11px;
+    text-align: center;
+    max-width: 100%;
+}
+
+@keyframes bubbleIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Input area */
+#chat-input-area {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    gap: 8px;
+}
+#chat-input {
+    flex: 1;
+    background: var(--chat-surface);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 8px 14px;
+    color: var(--chat-text);
+    font-size: 13px;
+    font-family: "Inter", sans-serif;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    resize: none;
+}
+#chat-input:focus {
+    border-color: var(--chat-accent);
+    box-shadow: 0 0 0 3px var(--chat-glow);
+}
+#chat-input::placeholder { color: rgba(255,255,255,0.3); }
+#chat-send-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--chat-user-bg);
+    border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: #fff;
+    transition: transform 0.15s, box-shadow 0.2s;
+    padding: 0; flex-shrink: 0;
+}
+#chat-send-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 12px var(--chat-glow);
+}
+
+/* ── Responsive chat ─────────────────────────────────── */
+@media (max-width: 600px) {
+    #chat-sidebar {
+        width: calc(100vw - 24px);
+        right: 12px;
+        bottom: 12px;
+        max-height: 70vh;
+    }
+}
 </style>
 <script type="text/javascript">
 function x(){
@@ -93,6 +287,7 @@ function re() { document.fm.reset(); }
             <li><a href="/">HOME</a></li>
             <li><a href="profile.html">WIKI</a></li>
             <li><a href="javascript:void(0);" onclick="window.open('./kitaiti.html', 'kitaiti', 'width=500, height=600');">別窓</a></li>
+            <li><a href="/downloads/sagbi_install.exe" download>📥 sagbi install</a></li>
         </ul>
     </div>
     <div id="contents">
@@ -152,7 +347,29 @@ function re() { document.fm.reset(); }
         <div>© 2036 SAGBI AGI / Biohack5079</div>
     </footer>
 </div>
+
+<!-- ══════════════════════════════════════════════════════
+     Floating Chat Sidebar
+     ══════════════════════════════════════════════════════ -->
+<div id="chat-sidebar">
+    <div id="chat-header" onclick="document.getElementById('chat-sidebar').classList.toggle('collapsed')">
+        <h3>🤖 SAGBI AGI へ質問</h3>
+        <span id="chat-status" class="chat-status offline">オフライン</span>
+    </div>
+    <div id="agent-preview">
+        <canvas id="agent-canvas"></canvas>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-area">
+        <input type="text" id="chat-input" placeholder="何でも聞いてください…" autocomplete="off">
+        <button id="chat-send-btn" aria-label="送信">➤</button>
+    </div>
+</div>
+
+<!-- three.js (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+<!-- Chat module -->
+<script src="chat.js"></script>
 </body>
 </html>
-
-									
