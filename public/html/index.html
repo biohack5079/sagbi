@@ -440,13 +440,16 @@ function re() { document.fm.reset(); }
      ══════════════════════════════════════════════════════ -->
 <div id="chat-sidebar">
     <div id="chat-header">
+        <div class="chat-status-area">
+            <div id="chat-status-dot"></div>
+            <span id="chat-title">SAGBI DANCE FLOOR</span>
+        </div>
         <div class="chat-controls">
-        <div id="chat-status-dot"></div>
-        <div id="chat-title">SAGBI DANCE FLOOR</div>
-        <div style="flex:1"></div>
-        <button class="chat-btn" id="install-btn" title="Install App" style="display:none">📥</button>
-        <button class="chat-btn" id="chat-close-btn" title="Toggle Size">−</button>
-    </div>
+            <button class="chat-btn" id="install-btn" title="Install App" style="display:none">📥</button>
+            <button class="chat-btn" id="chat-close-btn" title="Toggle Size">−</button>
+        </div>
+    </div> <!-- Fixed: added missing closing div -->
+
     <div id="agent-preview">
         <canvas id="agent-canvas"></canvas>
     </div>
@@ -467,9 +470,12 @@ function re() { document.fm.reset(); }
     </div>
 </div>
 
-
 <script>
-  // --- Remote Logger ---
+  // --- Global State & Logger ---
+  window.sagbiWS = null;
+  const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
+  let currentImageBase64 = null;
+
   function terminalLog(msg) {
     console.log(msg);
     if (window.sagbiWS && window.sagbiWS.readyState === 1) {
@@ -478,58 +484,114 @@ function re() { document.fm.reset(); }
   }
   window.onerror = (m, u, l) => terminalLog(`[ERROR] ${m} at line ${l}`);
 
-  // --- UI Elements ---
   const chatSidebar = document.getElementById('chat-sidebar');
   const chatHeader = document.getElementById('chat-header');
-  const chatCloseBtn = document.getElementById('chat-close-btn');
+  const chatMessages = document.getElementById('chat-messages');
   const chatInput = document.getElementById('chat-input');
   const chatSendBtn = document.getElementById('chat-send-btn');
-  const camBtn = document.getElementById('cam-btn');
-  const micBtn = document.getElementById('mic-btn');
-  const fileBtn = document.getElementById('file-btn');
-  const fileInput = document.getElementById('hidden-file-input');
+  const chatStatus = document.getElementById('chat-status-dot');
 
-  // --- Drag Logic ---
-  let isDragging = false;
+  // --- WebSocket & Messaging ---
+  function connectWS() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const SIGNALING_URL = urlParams.get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
+    
+    window.sagbiWS = new WebSocket(SIGNALING_URL);
+    window.sagbiWS.onopen = () => {
+      chatStatus.style.background = '#4caf50';
+      window.sagbiWS.send(JSON.stringify({ type: 'register', payload: { role: 'web_chat' } }));
+      terminalLog("WebSocket Connected.");
+    };
+    window.sagbiWS.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === 'chat_response' && window.handleAgentResponse) {
+            window.handleAgentResponse(msg.payload);
+        } else if (msg.type === 'chat_response') {
+            addMessage(msg.payload.text, false);
+        }
+      } catch (e) { terminalLog("WS Msg Error: " + e.message); }
+    };
+    window.sagbiWS.onclose = () => {
+      chatStatus.style.background = '#f44336';
+      setTimeout(connectWS, 3000);
+    };
+  }
+
+  function addMessage(text, isUser, isSystem = false) {
+    const div = document.createElement('div');
+    div.className = `chat-bubble ${isUser ? 'user' : 'bot'} ${isSystem ? 'system' : ''}`;
+    const content = document.createElement('div');
+    content.textContent = text;
+    div.appendChild(content);
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function sendMessage() {
+    const text = chatInput.value.trim();
+    if (!text && !currentImageBase64) return;
+    addMessage(text, true);
+    if (window.sagbiWS && window.sagbiWS.readyState === 1) {
+      window.sagbiWS.send(JSON.stringify({
+        type: 'chat_message',
+        payload: { text, image: currentImageBase64, lang }
+      }));
+    }
+    chatInput.value = '';
+    currentImageBase64 = null;
+    document.getElementById('file-btn').classList.remove('active');
+  }
+
+  // --- UI Interactions ---
+  chatSendBtn.onclick = sendMessage;
+  chatInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+
   chatHeader.onmousedown = (e) => {
     if (e.target.closest('.chat-btn')) return;
     e.preventDefault();
     let pos3 = e.clientX, pos4 = e.clientY;
     document.onmousemove = (ev) => {
-      isDragging = true;
-      let pos1 = pos3 - ev.clientX, pos2 = pos4 - ev.clientY;
+      chatSidebar.style.top = (chatSidebar.offsetTop - (pos4 - ev.clientY)) + "px";
+      chatSidebar.style.left = (chatSidebar.offsetLeft - (pos3 - ev.clientX)) + "px";
       pos3 = ev.clientX; pos4 = ev.clientY;
-      chatSidebar.style.top = (chatSidebar.offsetTop - pos2) + "px";
-      chatSidebar.style.left = (chatSidebar.offsetLeft - pos1) + "px";
     };
-    document.onmouseup = () => {
-      document.onmousemove = null; document.onmouseup = null;
-      saveChatState();
-    };
+    document.onmouseup = () => { document.onmousemove = null; saveChatState(); };
   };
 
-  // --- Resize & State ---
-  function saveChatState() {
-    const s = {
-      top: chatSidebar.style.top, left: chatSidebar.style.left,
-      width: chatSidebar.style.width, height: chatSidebar.style.height,
-      collapsed: chatSidebar.classList.contains('collapsed')
-    };
-    localStorage.setItem('sagbiChatState', JSON.stringify(s));
-  }
-  new ResizeObserver(saveChatState).observe(chatSidebar);
-
-  chatCloseBtn.onclick = () => {
+  document.getElementById('chat-close-btn').onclick = () => {
     chatSidebar.classList.toggle('collapsed');
     saveChatState();
   };
 
   // --- Button Handlers ---
+  const camBtn = document.getElementById('cam-btn');
+  const micBtn = document.getElementById('mic-btn');
+  const fileBtn = document.getElementById('file-btn');
+  const fileInput = document.getElementById('hidden-file-input');
+
   if (camBtn) camBtn.onclick = () => camBtn.classList.toggle('active');
   if (micBtn) micBtn.onclick = () => micBtn.classList.toggle('active');
   if (fileBtn) fileBtn.onclick = () => fileInput.click();
+  if (fileInput) {
+    fileInput.onchange = (e) => {
+      if (e.target.files.length > 0) {
+        const reader = new FileReader();
+        reader.onload = (re) => { currentImageBase64 = re.target.result; fileBtn.classList.add('active'); };
+        reader.readAsDataURL(e.target.files[0]);
+      }
+    };
+  }
 
-  // --- Position Init ---
+  function saveChatState() {
+    localStorage.setItem('sagbiChatState', JSON.stringify({
+      top: chatSidebar.style.top, left: chatSidebar.style.left,
+      width: chatSidebar.style.width, height: chatSidebar.style.height,
+      collapsed: chatSidebar.classList.contains('collapsed')
+    }));
+  }
+  new ResizeObserver(saveChatState).observe(chatSidebar);
+
   window.addEventListener('load', () => {
     const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
     if (saved.top) {
@@ -537,7 +599,9 @@ function re() { document.fm.reset(); }
       chatSidebar.style.width = saved.width; chatSidebar.style.height = saved.height;
       if (saved.collapsed) chatSidebar.classList.add('collapsed');
     }
-    terminalLog("UI Initialized and ready.");
+    connectWS();
+    setTimeout(() => addMessage("SAGBI DANCE FLOORへようこそ！", false), 1000);
+    terminalLog("UI fully initialized.");
   });
 </script>
 
