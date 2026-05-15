@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SAGBI DANCE FLOOR</title>
+<title>SAGBI AGI</title>
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;700&display=swap" rel="stylesheet">
 <style>
 /* --- Reference Base Design (Re-applied) --- */
@@ -135,28 +135,95 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
   }
 }
 </script>
+<script type="text/javascript">
+    function x() {
+        var e = parseFloat(document.fm.per.value);
+        var b = parseFloat(document.fm.pbr.value);
+        var d = parseFloat(document.fm.dy.value);
+        if (isNaN(e) || isNaN(b) || isNaN(d)) return;
+        var x_val = 2 * Math.pow(d / b / b / e, 1 / 4);
+
+        if (isNaN(x_val)) {
+            document.fm.ex.value = "算定不能";
+        } else {
+            document.fm.ex.value = x_val.toFixed(4);
+        }
+
+        var q = parseFloat(document.fm.qo.value);
+        var p = q * x_val;
+        if (!isNaN(p)) document.fm.pr.value = Math.round(p);
+
+        var n = parseFloat(document.fm.hy.value);
+        if (isNaN(n)) return;
+        var g = b / e - b * d / 100;
+        var r = x_val * Math.pow(1 + g, n) + 0.8 * (d / 100) * (Math.pow(1 + g, n) - 1) / g;
+        var t = q * r;
+        if (!isNaN(r)) document.fm.ex.value = r.toFixed(4);
+        if (!isNaN(t)) document.fm.pr.value = Math.round(t);
+    }
+    function re() { document.fm.reset(); }
+</script>
 </head>
 <body>
 
 <div id="wrapper">
     <div id="header-box">
-        <div id="site-info"><a href="/">SAGBI DANCE FLOOR</a></div>
+        <div id="site-info"><a href="/">SAGBI AGI</a></div>
     </div>
     <div id="nav-container">
         <ul class="menu-box">
             <li><a href="/">HOME</a></li>
-            <li><a href="https://github.com/biohack5079" target="_blank">GITHUB</a></li>
-            <li><a href="https://huggingface.co/G1mAvaterUniverse" target="_blank">MODELS</a></li>
+            <li><a href="profile.html">WIKI</a></li>
+            <li><a href="javascript:void(0);"
+                    onclick="window.open('./kitaiti.html', 'kitaiti', 'width=500, height=600');">別窓</a></li>
+            <li><a href="https://github.com/biohack5079/sagbi/releases/download/v1.0.0/sagbi_install.exe" download>Install</a></li>
         </ul>
     </div>
     <div id="contents">
         <main id="main-contents">
             <article class="cps-post-main">
                 <div class="form-card">
-                    <h2>Knowledge Share / RAG Folder</h2>
-                    <p>このページで共有された全てのやり取り、画像、データは <code>rag/</code> フォルダに集約され、AIの共有知として蓄積されます。</p>
-                    <p>「オープンなチャット」として、みんなの知識がみんなのものになります。</p>
+                    <form name="fm">
+                        <table class="form-table">
+                            <tr>
+                                <td>PER</td>
+                                <td><input type="text" name="per" onkeyup="x()"> 倍</td>
+                            </tr>
+                            <tr>
+                                <td>PBR</td>
+                                <td><input type="text" name="pbr" onkeyup="x()"> 倍</td>
+                            </tr>
+                            <tr>
+                                <td>利回り</td>
+                                <td><input type="text" name="dy" onkeyup="x()"> ％</td>
+                            </tr>
+                            <tr>
+                                <td>期待値</td>
+                                <td><input type="text" name="ex" readonly> 倍</td>
+                            </tr>
+                            <tr>
+                                <td>株価</td>
+                                <td><input type="text" name="qo" onkeyup="x()"> 円</td>
+                            </tr>
+                            <tr>
+                                <td><strong>目標</strong></td>
+                                <td><input type="text" name="pr" readonly> 円</td>
+                            </tr>
+                            <tr>
+                                <td>保有年</td>
+                                <td><input type="text" name="hy" onkeyup="x()"> 年</td>
+                            </tr>
+                        </table>
+                        <div style="text-align:center; margin-top:20px;"><button type="button"
+                                onclick="re()">リセット</button></div>
+                    </form>
                 </div>
+                <h2>使い方</h2>
+                <p>PER=e, PBR=b, 利回り=d とし、期待値xを計算します。</p>
+                <img src="x.png" alt="割安性" width="180">
+                <p>n年後のトータルリターンを理論株価として算出します。</p>
+                <img src="n.png" alt="期待値" width="300">
+
                 <h2>SAGBI AGI 連携</h2>
                 <p>右側のチャットパネルからAIエージェントと会話できます。画像認識、音声入力、カメラ連携が可能です。</p>
                 <div style="text-align:center; margin:20px 0;">
@@ -170,6 +237,32 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
                 <ul>
                     <li><a href="https://sagbuntu.web.app/chat.html">Full Chat Page</a></li>
                     <li><a href="https://g1m-pwa.onrender.com/">Avatar Console</a></li>
+                </ul>
+            </div>
+            <div class="widget">
+                <div class="widgettitle">SNS</div>
+                <ul>
+                    <li><a href="https://x.com/sagbuntu" target="_blank" rel="noopener noreferrer">X (Twitter)</a>
+                    </li>
+                    <li><a href="https://qiita.com/Intelligence" target="_blank" rel="noopener noreferrer">QUIITA
+                            (Tec Blog)</a></li>
+                </ul>
+            </div>
+            <div class="widget">
+                <div class="widgettitle">LINK</div>
+                <ul>
+                    <li><a href="https://github.com/biohack5079" target="_blank" rel="noopener noreferrer">GitHub
+                            (biohack5079)</a></li>
+                    <li><a href="http://firebird-5079.appspot.com" target="_blank"
+                            rel="noopener noreferrer">FireBird (GCP HP)</a></li>
+                    <li><a href="http://kabuka.s1007.xrea.com/kablog" target="_blank"
+                            rel="noopener noreferrer">KaBlog (WordPress)</a></li>
+                    <li><a href="http://kabuka.s1007.xrea.com/periody" target="_blank"
+                            rel="noopener noreferrer">Periody (Python BBS)</a></li>
+                    <li><a href="http://kabuka.s1007.xrea.com/nand" target="_blank"
+                            rel="noopener noreferrer">NandGame (Logic Calculator)</a></li>
+                    <li><a href="https://huggingface.co/G1mAvaterUniverse" target="_blank"
+                            rel="noopener noreferrer">HuggingFace (G1m AGI)</a></li>
                 </ul>
             </div>
         </aside>
