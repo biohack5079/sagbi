@@ -72,8 +72,8 @@ body {
 
 .form-card { border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; margin-bottom: 30px; }
 .form-table { width: 100%; border-collapse: collapse; }
-.form-table td { padding: 12px; border-bottom: 1px solid var(--border-color); }
-.form-table input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px; }
+.form-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-color); }
+.form-table input { padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; width: 70px; }
 
 h2 { border-left: 5px solid var(--primary-color); padding: 5px 15px; margin: 30px 0 15px; font-size: 1.2rem; background: #fafafa; }
 
@@ -85,6 +85,27 @@ h2 { border-left: 5px solid var(--primary-color); padding: 5px 15px; margin: 30p
 
 button { background: var(--primary-color); color: #fff; border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: 0.3s; }
 button:hover { opacity: 0.8; }
+
+/* Adjust #contents to make space for the fixed chat sidebar */
+/* Chat sidebar is 340px wide + 20px right offset = 360px. Add 20px buffer = 380px total space needed. */
+/* This media query applies when the chat sidebar is fixed and could overlap the main content. */
+/* It ensures the main content area is pushed to the left and its max-width is adjusted. */
+@media (min-width: 601px) and (max-width: 1459px) { /* Covers screens from 601px up to where content + chat sidebar fits without explicit margin */
+    #contents {
+        margin-right: 380px; /* Chat width (340px) + right offset (20px) + buffer (20px) */
+        margin-left: auto; /* Push content to the left */
+        /* Max-width is effectively limited by viewport width minus the margin-right and its own padding. */
+        /* This ensures content doesn't go under the chat sidebar, while still respecting the original 1100px max-width as an upper bound. */
+        max-width: calc(100% - 380px);
+    }
+}
+
+@media (min-width: 1460px) { /* When there's enough space for 1100px content + chat sidebar without overlap */
+    #contents {
+        margin: 40px auto; /* Revert to centered */
+        max-width: 1100px; /* Revert to full max-width */
+    }
+}
 
 footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size: 12px; color: #666; }
 
