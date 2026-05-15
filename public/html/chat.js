@@ -113,6 +113,7 @@ function handlePaste(e) {
 function initFloatingUI() {
   let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
   let isDragging = false;
+
   const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
   if (saved.top) {
     chatSidebar.style.top = saved.top;
@@ -121,43 +122,74 @@ function initFloatingUI() {
     chatSidebar.style.right = 'auto';
   }
   if (saved.collapsed) chatSidebar.classList.add('collapsed');
-  chatHeader.onmousedown = (e) => {
+
+  // ヘッダー全体のクリック・ドラッグに対応
+  chatHeader.addEventListener('mousedown', dragMouseDown);
+
+  function dragMouseDown(e) {
+    // ボタンをクリックした時はドラッグしない
     if (e.target.closest('.chat-btn')) return;
+    
     e.preventDefault();
-    pos3 = e.clientX; pos4 = e.clientY;
+    pos3 = e.clientX;
+    pos4 = e.clientY;
     isDragging = false;
-    document.onmouseup = () => {
-      document.onmouseup = null; document.onmousemove = null;
-      if (!isDragging) chatSidebar.classList.toggle('collapsed');
-      saveState();
-    };
-    document.onmousemove = (e) => {
-      e.preventDefault(); isDragging = true;
-      pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
-      pos3 = e.clientX; pos4 = e.clientY;
-      chatSidebar.style.top = (chatSidebar.offsetTop - pos2) + "px";
-      chatSidebar.style.left = (chatSidebar.offsetLeft - pos1) + "px";
-      chatSidebar.style.bottom = 'auto'; chatSidebar.style.right = 'auto';
-    };
-  };
-  const saveState = () => {
+    
+    document.addEventListener('mouseup', closeDragElement);
+    document.addEventListener('mousemove', elementDrag);
+  }
+
+  function elementDrag(e) {
+    e.preventDefault();
+    isDragging = true;
+    pos1 = pos3 - e.clientX;
+    pos2 = pos4 - e.clientY;
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+
+    // 現在の位置から移動量を引く
+    chatSidebar.style.top = (chatSidebar.offsetTop - pos2) + "px";
+    chatSidebar.style.left = (chatSidebar.offsetLeft - pos1) + "px";
+    chatSidebar.style.bottom = 'auto';
+    chatSidebar.style.right = 'auto';
+  }
+
+  function closeDragElement() {
+    document.removeEventListener('mouseup', closeDragElement);
+    document.removeEventListener('mousemove', elementDrag);
+    
+    // ドラッグしていなければ（単なるクリックなら）最小化切り替え
+    if (!isDragging) {
+      chatSidebar.classList.toggle('collapsed');
+    }
+    saveState();
+  }
+
+  function saveState() {
     localStorage.setItem('sagbiChatState', JSON.stringify({
-      top: chatSidebar.style.top, left: chatSidebar.style.left, collapsed: chatSidebar.classList.contains('collapsed')
+      top: chatSidebar.style.top,
+      left: chatSidebar.style.left,
+      collapsed: chatSidebar.classList.contains('collapsed')
     }));
-  };
+  }
 }
 
 function connectWS() {
   if (ws && ws.readyState === WebSocket.OPEN) return;
+  console.log('[SAGBI] Connecting to:', SIGNALING_URL);
   setStatus(t.connecting, 'connecting');
+  
   try {
     ws = new WebSocket(SIGNALING_URL);
   } catch (err) {
+    console.error('[SAGBI] WebSocket init error:', err);
     setStatus(t.offline, 'offline');
     scheduleReconnect();
     return;
   }
+
   ws.onopen = () => {
+    console.log('[SAGBI] WebSocket connected');
     wsReconnectAttempts = 0; isConnected = true; setStatus(t.online, 'online');
     ws.send(JSON.stringify({ type: 'register', payload: { role: 'web_chat' } }));
   };
@@ -170,9 +202,16 @@ function connectWS() {
       } else if (msg.type === 'system') {
         addMessage(`[system] ${msg.payload?.text || ''}`, false, true);
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('[SAGBI] Failed to parse message:', e);
+    }
   };
-  ws.onclose = () => {
+  ws.onerror = (err) => {
+    console.error('[SAGBI] WebSocket error:', err);
+    setStatus(t.error, 'offline');
+  };
+  ws.onclose = (e) => {
+    console.warn('[SAGBI] WebSocket closed:', e.code, e.reason);
     isConnected = false; setStatus(t.disconnect, 'offline'); scheduleReconnect();
   };
 }
