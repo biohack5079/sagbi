@@ -1,7 +1,9 @@
 /**
  * SAGBI DANCE FLOOR - Chat Client
  */
-console.log('--- SAGBI DANCE FLOOR: chat.js starting ---');
+const screenLog = window.screenLog || console.log;
+screenLog('--- SAGBI DANCE FLOOR: chat.js starting ---');
+
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -11,7 +13,7 @@ const SIGNALING_URL = urlParams.get('s') || `ws://${window.location.hostname}:80
 const GLB_MODEL_PATH = `./agent.glb?v=${Date.now()}`;
 const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
 
-console.log('[SAGBI] Signaling URL:', SIGNALING_URL);
+screenLog(`[SAGBI] Signaling: ${SIGNALING_URL}`);
 
 // --- DOM Elements ---
 const chatSidebar = document.getElementById('chat-sidebar');
@@ -42,7 +44,14 @@ const GESTURES = {
 document.addEventListener('DOMContentLoaded', () => {
   initFloatingUI();
   connectWS();
-  if (agentCanvas) initThreeAgent();
+  if (agentCanvas) {
+    try {
+      screenLog('[SAGBI] Initializing 3D Agent...');
+      initThreeAgent();
+    } catch (e) {
+      screenLog(`[SAGBI] 3D Init failed: ${e.message}`);
+    }
+  }
   
   // Welcome message
   const msg = lang === 'ja' ? "SAGBI DANCE FLOORへようこそ！何をお手伝いしようか？" : "Welcome to SAGBI DANCE FLOOR! How can I help you today?";
