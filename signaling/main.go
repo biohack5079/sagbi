@@ -21,7 +21,7 @@ import (
 var (
 	listenAddr  = envOr("LISTEN_ADDR", ":8080")
 	ollamaURL   = envOr("OLLAMA_URL", "http://localhost:11434")
-	ollamaModel = envOr("OLLAMA_MODEL", "gemma3:4b-it-q4_K_M")
+	ollamaModel = envOr("OLLAMA_MODEL", "gemma3:1b-it-q4_K_M")
 )
 
 func envOr(key, fallback string) string {
@@ -114,7 +114,7 @@ func queryOllama(prompt string) (string, error) {
 		Stream: false,
 	})
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 300 * time.Second}
 	resp, err := client.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return "", fmt.Errorf("ollama request failed: %w", err)

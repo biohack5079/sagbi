@@ -24,7 +24,7 @@ spec:
         - name: OLLAMA_URL
           value: "http://ollama-svc:11434"
         - name: OLLAMA_MODEL
-          value: "gemma3:4b-it-q4_K_M"
+          value: "gemma3:1b-it-q4_K_M"
         resources:
           requests:
             cpu: "100m"
