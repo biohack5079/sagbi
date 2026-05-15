@@ -33,10 +33,14 @@ func envOr(key, fallback string) string {
 
 // ── WebSocket upgrader ───────────────────────────────────────
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  4096,
-	WriteBufferSize: 4096,
+	ReadBufferSize:  1024 * 1024, // 1MB for image payloads
+	WriteBufferSize: 1024 * 1024,
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
+
+const (
+	pingPeriod = 30 * time.Second
+)
 
 // ── Client management ────────────────────────────────────────
 type Client struct {
@@ -64,9 +68,36 @@ func (h *Hub) unregister(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.clients[c]; ok {
-		close(c.send)
 		delete(h.clients, c)
-		log.Printf("[Hub] Client left: %s  total=%d", c.id, len(h.clients))
+		close(c.send)
+		log.Printf("[Hub] Client unregistered: %s  total=%d", c.id, len(h.clients))
+	}
+}
+
+func (c *Client) writePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case message, ok := <-c.send:
+			if !ok {
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			// Set write deadline for stability
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
 	}
 }
 
@@ -182,22 +213,23 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 	c := &Client{
 		conn: conn,
-		send: make(chan []byte, 64),
+		send: make(chan []byte, 1024), // Buffer for large messages
 		id:   fmt.Sprintf("client-%d", time.Now().UnixNano()),
 	}
 
 	hub.register(c)
 	defer hub.unregister(c)
 
-	// Writer goroutine
-	go func() {
-		defer conn.Close()
-		for msg := range c.send {
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				return
-			}
-		}
-	}()
+	// Keep connection alive with Pong handler
+	conn.SetReadLimit(10 * 1024 * 1024) // 10MB limit for base64 images
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	// Start writer goroutine
+	go c.writePump()
 
 	// Reader loop
 	for {
@@ -205,6 +237,8 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
+		// Reset deadline on message
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		var msg WSMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {

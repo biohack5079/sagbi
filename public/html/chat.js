@@ -95,73 +95,130 @@ document.addEventListener('DOMContentLoaded', () => {
   if (agentCanvas) initThreeAgent();
 });
 
+
 function handlePaste(e) {
   const items = (e.clipboardData || e.originalEvent.clipboardData).items;
   for (const item of items) {
     if (item.type.indexOf('image') !== -1) {
       const blob = item.getAsFile();
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        currentImageBase64 = event.target.result;
-        addMessage(`[Image attached]`, true, true);
-      };
-      reader.readAsDataURL(blob);
+      processImage(blob);
     }
   }
+}
+
+// Plower-style image processing: Resize to 1024px and convert to JPG
+function processImage(blob) {
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const tempImg = new Image();
+    tempImg.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_SIZE = 1024;
+      let width = tempImg.width;
+      let height = tempImg.height;
+      if (width > height) {
+        if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+      } else {
+        if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+      }
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(tempImg, 0, 0, width, height);
+      currentImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+      addMessage(`[Image attached]`, true, true);
+    };
+    tempImg.src = event.target.result;
+  };
+  reader.readAsDataURL(blob);
 }
 
 function initFloatingUI() {
   let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
   let isDragging = false;
 
+  // Restore state
   const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
   if (saved.top) {
     chatSidebar.style.top = saved.top;
     chatSidebar.style.left = saved.left;
+    chatSidebar.style.width = saved.width || '340px';
+    chatSidebar.style.height = saved.height || '580px';
     chatSidebar.style.bottom = 'auto';
     chatSidebar.style.right = 'auto';
   }
   if (saved.collapsed) chatSidebar.classList.add('collapsed');
 
-  // ヘッダー全体のクリック・ドラッグに対応
-  chatHeader.onmousedown = dragMouseDown;
-
-  function dragMouseDown(e) {
-    // ボタンをクリックした時はドラッグしない
-    if (e.target.closest('.chat-btn')) return;
-    
-    e.preventDefault();
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    isDragging = false;
-    
-    document.onmouseup = closeDragElement;
-    document.onmousemove = elementDrag;
+  // App Mode Check: Hide site content if ?app=1 or ?s= is present
+  if (urlParams.get('app') === '1' || urlParams.get('s')) {
+    document.body.style.background = '#000';
+    const wrapper = document.getElementById('wrapper');
+    if (wrapper) wrapper.style.display = 'none';
+    chatSidebar.classList.remove('collapsed'); // Always show in app mode
+    // Center it initially if no saved pos
+    if (!saved.top) {
+      chatSidebar.style.top = '50%';
+      chatSidebar.style.left = '50%';
+      chatSidebar.style.transform = 'translate(-50%, -50%)';
+    }
   }
 
-  function elementDrag(e) {
+  // Drag Support
+  chatHeader.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.chat-btn')) return;
     e.preventDefault();
+    pos3 = e.clientX; pos4 = e.clientY;
+    isDragging = false;
+    document.addEventListener('mousemove', elementDrag);
+    document.addEventListener('mouseup', closeDragElement);
+  });
+
+  function elementDrag(e) {
     isDragging = true;
     pos1 = pos3 - e.clientX;
     pos2 = pos4 - e.clientY;
     pos3 = e.clientX;
     pos4 = e.clientY;
-
-    // 現在の位置から移動量を引く
-    chatSidebar.style.top = (chatSidebar.offsetTop - pos2) + "px";
-    chatSidebar.style.left = (chatSidebar.offsetLeft - pos1) + "px";
+    
+    // Clamp to screen
+    let newTop = chatSidebar.offsetTop - pos2;
+    let newLeft = chatSidebar.offsetLeft - pos1;
+    chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 50, newTop)) + "px";
+    chatSidebar.style.left = Math.max(0, Math.min(window.innerWidth - 100, newLeft)) + "px";
     chatSidebar.style.bottom = 'auto';
     chatSidebar.style.right = 'auto';
+    chatSidebar.style.transform = 'none'; // Clear transform if it was centered
   }
 
   function closeDragElement() {
-    document.onmouseup = null;
-    document.onmousemove = null;
-    
-    // ドラッグしていなければ（単なるクリックなら）最小化切り替え
-    if (!isDragging) {
-      chatSidebar.classList.toggle('collapsed');
-    }
+    document.removeEventListener('mousemove', elementDrag);
+    document.removeEventListener('mouseup', closeDragElement);
+    if (!isDragging) chatSidebar.classList.toggle('collapsed');
+    saveState();
+  }
+
+  // Resize Support (Right-bottom corner)
+  const resizer = document.createElement('div');
+  resizer.style.width = '15px'; resizer.style.height = '15px';
+  resizer.style.position = 'absolute'; resizer.style.right = '0'; resizer.style.bottom = '0';
+  resizer.style.cursor = 'nwse-resize'; resizer.style.zIndex = '1000';
+  chatSidebar.appendChild(resizer);
+
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    document.addEventListener('mousemove', elementResize);
+    document.addEventListener('mouseup', stopResize);
+  });
+
+  function elementResize(e) {
+    const width = e.clientX - chatSidebar.offsetLeft;
+    const height = e.clientY - chatSidebar.offsetTop;
+    if (width > 280) chatSidebar.style.width = width + 'px';
+    if (height > 300) chatSidebar.style.height = height + 'px';
+  }
+
+  function stopResize() {
+    document.removeEventListener('mousemove', elementResize);
+    document.removeEventListener('mouseup', stopResize);
     saveState();
   }
 
@@ -169,9 +226,18 @@ function initFloatingUI() {
     localStorage.setItem('sagbiChatState', JSON.stringify({
       top: chatSidebar.style.top,
       left: chatSidebar.style.left,
+      width: chatSidebar.style.width,
+      height: chatSidebar.style.height,
       collapsed: chatSidebar.classList.contains('collapsed')
     }));
   }
+
+  // Ensure window is visible after resize
+  window.addEventListener('resize', () => {
+    const rect = chatSidebar.getBoundingClientRect();
+    if (rect.top > window.innerHeight) chatSidebar.style.top = (window.innerHeight - rect.height) + 'px';
+    if (rect.left > window.innerWidth) chatSidebar.style.left = (window.innerWidth - rect.width) + 'px';
+  });
 }
 
 function connectWS() {
