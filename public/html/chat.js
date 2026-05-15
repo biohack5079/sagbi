@@ -72,6 +72,7 @@ function initFloatingUI() {
       chatSidebar.style.top = Math.max(20, startTop) + 'px';
       chatSidebar.style.left = Math.max(20, startLeft) + 'px';
     }
+    chatSidebar.style.opacity = '1'; // Reveal now
     if (saved.collapsed) chatSidebar.classList.add('collapsed');
   };
 
