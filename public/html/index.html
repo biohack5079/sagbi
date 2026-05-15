@@ -448,10 +448,15 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 </div>
 
-<!-- three.js (CDN) -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-<!-- Chat module -->
-<script src="chat.js"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/examples/jsm/loaders/GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js"
+  }
+}
+</script>
+<script type="module" src="chat.js"></script>
 </body>
 </html>
