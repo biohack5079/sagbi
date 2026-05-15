@@ -1,7 +1,21 @@
 # Firebase Hosting ignore rules
-# Exclude executables (Spark plan restriction)
+
+# 1. 開発環境やキャッシュファイルを一括除外
+node_modules
+.git
+.firebase
+.firebaserc
+README.md
+
+# 2. 実行ファイル（.exe）をプロジェクト全体から除外
+# これにより、どのフォルダに exe があってもデプロイ対象から外れます
 **/*.exe
-# Optional: exclude large binaries
+
+# 3. その他、Sparkプランの制限（個別ファイル32MBなど）にかかりやすいファイルを除外
 **/*.dll
-# Keep other assets
-!public/**
+**/*.msi
+**/*.zip
+
+# 4. public フォルダ内の特定のディレクトリ（例: downloads）を除外したい場合
+# public/downloads/ の中身を空にしたいなら以下も有効です
+public/downloads/
