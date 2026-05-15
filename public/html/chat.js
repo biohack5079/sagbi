@@ -90,7 +90,16 @@ function initThreeAgent() {
     threeModel = gltf.scene;
     threeScene.add(threeModel);
     console.log('[SAGBI] 3D Model Loaded.');
-  }, undefined, (err) => console.error('[SAGBI] Model load failed', err));
+    if (window.updateStatus) window.updateStatus(""); // Hide on success
+  }, (xhr) => {
+    if (xhr.total > 0 && window.updateStatus) {
+      const p = Math.round(xhr.loaded / xhr.total * 100);
+      window.updateStatus(`Loading Model: ${p}%`);
+    }
+  }, (err) => {
+    console.error('[SAGBI] Model load failed', err);
+    if (window.updateStatus) window.updateStatus("Model load failed.");
+  });
   
   const animate = () => {
     requestAnimationFrame(animate);

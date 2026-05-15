@@ -452,6 +452,9 @@ function re() { document.fm.reset(); }
 
     <div id="agent-preview">
         <canvas id="agent-canvas"></canvas>
+        <div id="agent-status" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none; text-align:center;">
+          Initializing...
+        </div>
     </div>
     <div id="chat-messages"></div>
     <div id="chat-input-area">
@@ -476,8 +479,17 @@ function re() { document.fm.reset(); }
   const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
   let currentImageBase64 = null;
 
+  function updateStatus(msg) {
+    const status = document.getElementById('agent-status');
+    if (status) {
+      status.textContent = msg;
+      status.style.display = (msg === "") ? 'none' : 'block';
+    }
+  }
+
   function terminalLog(msg) {
     console.log(msg);
+    updateStatus(msg);
     if (window.sagbiWS && window.sagbiWS.readyState === 1) {
       window.sagbiWS.send(JSON.stringify({ type: 'log', payload: msg }));
     }
@@ -496,6 +508,7 @@ function re() { document.fm.reset(); }
     const urlParams = new URLSearchParams(window.location.search);
     const SIGNALING_URL = urlParams.get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
     
+    updateStatus("Connecting to signaling...");
     window.sagbiWS = new WebSocket(SIGNALING_URL);
     window.sagbiWS.onopen = () => {
       chatStatus.style.background = '#4caf50';
@@ -514,6 +527,7 @@ function re() { document.fm.reset(); }
     };
     window.sagbiWS.onclose = () => {
       chatStatus.style.background = '#f44336';
+      updateStatus("Disconnected. Retrying...");
       setTimeout(connectWS, 3000);
     };
   }
@@ -521,6 +535,14 @@ function re() { document.fm.reset(); }
   function addMessage(text, isUser, isSystem = false) {
     const div = document.createElement('div');
     div.className = `chat-bubble ${isUser ? 'user' : 'bot'} ${isSystem ? 'system' : ''}`;
+    
+    if (isUser && currentImageBase64) {
+      const img = document.createElement('img');
+      img.src = currentImageBase64;
+      img.style.maxWidth = '100%'; img.style.borderRadius = '10px'; img.style.marginBottom = '5px';
+      div.appendChild(img);
+    }
+
     const content = document.createElement('div');
     content.textContent = text;
     div.appendChild(content);
@@ -543,6 +565,34 @@ function re() { document.fm.reset(); }
     document.getElementById('file-btn').classList.remove('active');
   }
 
+  // --- Image Processing & Paste ---
+  function processImage(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_W = 600;
+        let w = img.width, h = img.height;
+        if (w > MAX_W) { h *= MAX_W / w; w = MAX_W; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        currentImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+        document.getElementById('file-btn').classList.add('active');
+        terminalLog("Image attached.");
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  window.addEventListener('paste', (e) => {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) processImage(item.getAsFile());
+    }
+  });
+
   // --- UI Interactions ---
   chatSendBtn.onclick = sendMessage;
   chatInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
@@ -564,7 +614,6 @@ function re() { document.fm.reset(); }
     saveChatState();
   };
 
-  // --- Button Handlers ---
   const camBtn = document.getElementById('cam-btn');
   const micBtn = document.getElementById('mic-btn');
   const fileBtn = document.getElementById('file-btn');
@@ -573,15 +622,7 @@ function re() { document.fm.reset(); }
   if (camBtn) camBtn.onclick = () => camBtn.classList.toggle('active');
   if (micBtn) micBtn.onclick = () => micBtn.classList.toggle('active');
   if (fileBtn) fileBtn.onclick = () => fileInput.click();
-  if (fileInput) {
-    fileInput.onchange = (e) => {
-      if (e.target.files.length > 0) {
-        const reader = new FileReader();
-        reader.onload = (re) => { currentImageBase64 = re.target.result; fileBtn.classList.add('active'); };
-        reader.readAsDataURL(e.target.files[0]);
-      }
-    };
-  }
+  if (fileInput) fileInput.onchange = (e) => { if (e.target.files.length > 0) processImage(e.target.files[0]); };
 
   function saveChatState() {
     localStorage.setItem('sagbiChatState', JSON.stringify({
@@ -601,7 +642,6 @@ function re() { document.fm.reset(); }
     }
     connectWS();
     setTimeout(() => addMessage("SAGBI DANCE FLOORへようこそ！", false), 1000);
-    terminalLog("UI fully initialized.");
   });
 </script>
 
