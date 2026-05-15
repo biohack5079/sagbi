@@ -56,71 +56,76 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Floating UI & Window Management ---
 function initFloatingUI() {
-  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-  chatSidebar.style.bottom = 'auto'; chatSidebar.style.right = 'auto'; chatSidebar.style.transform = 'none';
+  try {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    chatSidebar.style.bottom = 'auto'; chatSidebar.style.right = 'auto'; chatSidebar.style.transform = 'none';
 
-  const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
-  
-  const applyInitialPos = () => {
-    if (saved.top) {
-      chatSidebar.style.top = saved.top; chatSidebar.style.left = saved.left;
-      chatSidebar.style.width = saved.width || '360px'; chatSidebar.style.height = saved.height || '600px';
-    } else {
-      const isApp = urlParams.get('app') === '1' || urlParams.get('s');
-      const startTop = isApp ? (window.innerHeight - 600) / 2 : (window.innerHeight - 620);
-      const startLeft = isApp ? (window.innerWidth - 360) / 2 : (window.innerWidth - 380);
-      chatSidebar.style.top = Math.max(20, startTop) + 'px';
-      chatSidebar.style.left = Math.max(20, startLeft) + 'px';
+    const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
+    
+    const applyInitialPos = () => {
+      try {
+        if (saved.top) {
+          chatSidebar.style.top = saved.top; chatSidebar.style.left = saved.left;
+          chatSidebar.style.width = saved.width || '360px'; chatSidebar.style.height = saved.height || '600px';
+        } else {
+          const isApp = urlParams.get('app') === '1' || urlParams.get('s');
+          const startTop = isApp ? (window.innerHeight - 600) / 2 : (window.innerHeight - 620);
+          const startLeft = isApp ? (window.innerWidth - 360) / 2 : (window.innerWidth - 380);
+          chatSidebar.style.top = Math.max(20, startTop) + 'px';
+          chatSidebar.style.left = Math.max(20, startLeft) + 'px';
+        }
+        if (saved.collapsed) chatSidebar.classList.add('collapsed');
+      } catch (e) { console.error('[SAGBI] applyInitialPos error:', e); }
+    };
+
+    setTimeout(applyInitialPos, 100);
+
+    if (urlParams.get('app') === '1' || urlParams.get('s')) {
+      document.body.style.background = 'radial-gradient(circle at center, #1e1e2f 0%, #0a0a0f 100%)';
+      const wrapper = document.getElementById('wrapper');
+      if (wrapper) wrapper.style.display = 'none';
     }
-    chatSidebar.style.opacity = '1'; // Reveal now
-    if (saved.collapsed) chatSidebar.classList.add('collapsed');
-  };
 
-  setTimeout(applyInitialPos, 100);
+    // Drag Support
+    chatHeader.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.chat-btn')) return;
+      e.preventDefault();
+      pos3 = e.clientX; pos4 = e.clientY; isDragging = false;
+      document.addEventListener('mousemove', elementDrag);
+      document.addEventListener('mouseup', closeDragElement);
+    });
 
-  if (urlParams.get('app') === '1' || urlParams.get('s')) {
-    document.body.style.background = 'radial-gradient(circle at center, #1e1e2f 0%, #0a0a0f 100%)';
-    const wrapper = document.getElementById('wrapper');
-    if (wrapper) wrapper.style.display = 'none';
+    function elementDrag(e) {
+      isDragging = true;
+      pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+      pos3 = e.clientX; pos4 = e.clientY;
+      let newTop = chatSidebar.offsetTop - pos2;
+      let newLeft = chatSidebar.offsetLeft - pos1;
+      chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 50, newTop)) + "px";
+      chatSidebar.style.left = Math.max(-200, Math.min(window.innerWidth - 100, newLeft)) + "px";
+    }
+
+    function closeDragElement() {
+      document.removeEventListener('mousemove', elementDrag);
+      document.removeEventListener('mouseup', closeDragElement);
+      if (!isDragging) chatSidebar.classList.toggle('collapsed');
+      saveState();
+    }
+
+    function saveState() {
+      localStorage.setItem('sagbiChatState', JSON.stringify({
+        top: chatSidebar.style.top, left: chatSidebar.style.left,
+        width: chatSidebar.style.width, height: chatSidebar.style.height,
+        collapsed: chatSidebar.classList.contains('collapsed')
+      }));
+    }
+
+    // Browser Resize Sync
+    const resizeObserver = new ResizeObserver(() => saveState());
+    resizeObserver.observe(chatSidebar);
+  } catch (e) {
+    console.error('[SAGBI] initFloatingUI error:', e);
   }
-
-  // Drag Support
-  chatHeader.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.chat-btn')) return;
-    e.preventDefault();
-    pos3 = e.clientX; pos4 = e.clientY; isDragging = false;
-    document.addEventListener('mousemove', elementDrag);
-    document.addEventListener('mouseup', closeDragElement);
-  });
-
-  function elementDrag(e) {
-    isDragging = true;
-    pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
-    pos3 = e.clientX; pos4 = e.clientY;
-    let newTop = chatSidebar.offsetTop - pos2;
-    let newLeft = chatSidebar.offsetLeft - pos1;
-    chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 50, newTop)) + "px";
-    chatSidebar.style.left = Math.max(-200, Math.min(window.innerWidth - 100, newLeft)) + "px";
-  }
-
-  function closeDragElement() {
-    document.removeEventListener('mousemove', elementDrag);
-    document.removeEventListener('mouseup', closeDragElement);
-    if (!isDragging) chatSidebar.classList.toggle('collapsed');
-    saveState();
-  }
-
-  function saveState() {
-    localStorage.setItem('sagbiChatState', JSON.stringify({
-      top: chatSidebar.style.top, left: chatSidebar.style.left,
-      width: chatSidebar.style.width, height: chatSidebar.style.height,
-      collapsed: chatSidebar.classList.contains('collapsed')
-    }));
-  }
-
-  // Browser Resize Sync
-  const resizeObserver = new ResizeObserver(() => saveState());
-  resizeObserver.observe(chatSidebar);
 }
 
 // --- PWA & Media Controls ---
