@@ -6,9 +6,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // --- Constants & Config ---
-const SIGNALING_URL = new URLSearchParams(window.location.search).get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
-const GLB_MODEL_PATH = 'https://sagbuntu.web.app/agent.glb';
 const urlParams = new URLSearchParams(window.location.search);
+const SIGNALING_URL = urlParams.get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
+const GLB_MODEL_PATH = './agent.glb';
 const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
 
 // --- DOM Elements ---
