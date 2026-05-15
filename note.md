@@ -15,4 +15,6 @@ git config user.name "Your Name"
 git add .
 git commit -m "change"
 git push -u origin main
+firebase deploy
 
+./start_sagbi.sh

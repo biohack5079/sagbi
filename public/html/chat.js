@@ -136,34 +136,43 @@ function initFloatingUI() {
   let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
   let isDragging = false;
 
-  // Restore state
-  const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
-  if (saved.top) {
-    chatSidebar.style.top = saved.top;
-    chatSidebar.style.left = saved.left;
-    chatSidebar.style.width = saved.width || '340px';
-    chatSidebar.style.height = saved.height || '580px';
-    chatSidebar.style.bottom = 'auto';
-    chatSidebar.style.right = 'auto';
-  }
-  if (saved.collapsed) chatSidebar.classList.add('collapsed');
+  // Initial setup: ensure absolute positioning
+  chatSidebar.style.bottom = 'auto';
+  chatSidebar.style.right = 'auto';
+  chatSidebar.style.transform = 'none';
 
-  // App Mode Check: Hide site content if ?app=1 or ?s= is present
+  const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
+  
+  const applyInitialPos = () => {
+    if (saved.top) {
+      chatSidebar.style.top = saved.top;
+      chatSidebar.style.left = saved.left;
+      chatSidebar.style.width = saved.width || '340px';
+      chatSidebar.style.height = saved.height || '580px';
+    } else if (urlParams.get('app') === '1' || urlParams.get('s')) {
+      // Center for App Mode
+      const startTop = (window.innerHeight - 580) / 2;
+      const startLeft = (window.innerWidth - 340) / 2;
+      chatSidebar.style.top = Math.max(50, startTop) + 'px';
+      chatSidebar.style.left = Math.max(50, startLeft) + 'px';
+    } else {
+      // Default bottom-right for web mode
+      chatSidebar.style.top = (window.innerHeight - 600) + 'px';
+      chatSidebar.style.left = (window.innerWidth - 360) + 'px';
+    }
+
+    if (saved.collapsed) chatSidebar.classList.add('collapsed');
+  };
+
+  // Wait a bit to ensure innerHeight is correct
+  setTimeout(applyInitialPos, 100);
+
+  // App Mode Background
   if (urlParams.get('app') === '1' || urlParams.get('s')) {
     document.body.style.background = 'radial-gradient(circle at center, #1e1e2f 0%, #0a0a0f 100%)';
     const wrapper = document.getElementById('wrapper');
     if (wrapper) wrapper.style.display = 'none';
-    chatSidebar.classList.remove('collapsed'); // Always show in app mode
-    
-    // Center it initially if no saved pos
-    if (!saved.top) {
-      const startTop = (window.innerHeight - 580) / 2;
-      const startLeft = (window.innerWidth - 340) / 2;
-      chatSidebar.style.top = Math.max(20, startTop) + 'px';
-      chatSidebar.style.left = Math.max(20, startLeft) + 'px';
-      chatSidebar.style.bottom = 'auto';
-      chatSidebar.style.right = 'auto';
-    }
+    chatSidebar.classList.remove('collapsed');
   }
 
   // Drag Support
@@ -183,16 +192,15 @@ function initFloatingUI() {
     pos3 = e.clientX;
     pos4 = e.clientY;
     
-    // Clamp to screen (ensure header is always visible)
+    // Clamp to screen (ensure header is always reachable)
     let newTop = chatSidebar.offsetTop - pos2;
     let newLeft = chatSidebar.offsetLeft - pos1;
     const rect = chatSidebar.getBoundingClientRect();
     
-    chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 40, newTop)) + "px";
-    chatSidebar.style.left = Math.max(-rect.width + 50, Math.min(window.innerWidth - 50, newLeft)) + "px";
+    chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 60, newTop)) + "px";
+    chatSidebar.style.left = Math.max(-rect.width + 100, Math.min(window.innerWidth - 100, newLeft)) + "px";
     chatSidebar.style.bottom = 'auto';
     chatSidebar.style.right = 'auto';
-    chatSidebar.style.transform = 'none';
   }
 
   function closeDragElement() {
@@ -204,7 +212,8 @@ function initFloatingUI() {
 
   // Resize Support (Right-bottom corner)
   const resizer = document.createElement('div');
-  resizer.style.width = '15px'; resizer.style.height = '15px';
+  resizer.className = 'chat-resizer';
+  resizer.style.width = '20px'; resizer.style.height = '20px';
   resizer.style.position = 'absolute'; resizer.style.right = '0'; resizer.style.bottom = '0';
   resizer.style.cursor = 'nwse-resize'; resizer.style.zIndex = '1000';
   chatSidebar.appendChild(resizer);
@@ -238,11 +247,10 @@ function initFloatingUI() {
     }));
   }
 
-  // Ensure window is visible after resize
   window.addEventListener('resize', () => {
     const rect = chatSidebar.getBoundingClientRect();
-    if (rect.top > window.innerHeight) chatSidebar.style.top = (window.innerHeight - rect.height) + 'px';
-    if (rect.left > window.innerWidth) chatSidebar.style.left = (window.innerWidth - rect.width) + 'px';
+    if (rect.top > window.innerHeight) chatSidebar.style.top = (window.innerHeight - 100) + 'px';
+    if (rect.left > window.innerWidth) chatSidebar.style.left = (window.innerWidth - 100) + 'px';
   });
 }
 

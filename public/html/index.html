@@ -120,7 +120,7 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
 #chat-sidebar {
     position: fixed;
     width: 340px;
-    max-height: 580px;
+    height: 580px;
     background: var(--chat-bg);
     border-radius: 18px;
     box-shadow: 0 8px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
@@ -130,14 +130,12 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
     z-index: 9999;
     overflow: hidden;
     font-family: "Inter", sans-serif;
-    transition: transform 0.35s cubic-bezier(.4,0,.2,1), opacity 0.35s;
-    transform: translateY(0);
-    opacity: 1;
-    bottom: 20px; /* デフォルト位置 */
-    right: 20px;  /* デフォルト位置 */
+    transition: opacity 0.35s; /* Remove transform transition to avoid drag lag */
+    top: 20px; /* Safe default */
+    left: 20px; /* Safe default */
 }
 #chat-sidebar.collapsed {
-    transform: translateY(calc(100% - 52px));
+    height: 52px !important;
 }
 
 /* Header */
