@@ -267,17 +267,16 @@ function sendMessage() {
 
 function addMessage(text, isUser, isSystem = false) {
   const div = document.createElement('div');
-  div.className = `message ${isUser ? 'user' : 'bot'} ${isSystem ? 'system' : ''}`;
+  div.className = `chat-bubble ${isUser ? 'user' : 'bot'} ${isSystem ? 'system' : ''}`;
   
   if (isUser && currentImageBase64) {
     const img = document.createElement('img');
     img.src = currentImageBase64;
-    img.style.maxWidth = '100%'; img.style.borderRadius = '10px';
+    img.style.maxWidth = '100%'; img.style.borderRadius = '10px'; img.style.marginBottom = '5px';
     div.appendChild(img);
   }
 
   const content = document.createElement('div');
-  content.className = 'message-content';
   content.textContent = text;
   div.appendChild(content);
 
