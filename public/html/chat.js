@@ -1,7 +1,7 @@
 /**
- * SAGBI AGI - Sagbi-chan Chat Client
- * Features: Floating UI, Gestures, Multimodal, PWA, Media Controls
+ * SAGBI DANCE FLOOR - Chat Client
  */
+console.log('--- SAGBI DANCE FLOOR: chat.js starting ---');
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -10,6 +10,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const SIGNALING_URL = urlParams.get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
 const GLB_MODEL_PATH = `./agent.glb?v=${Date.now()}`;
 const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
+
+console.log('[SAGBI] Signaling URL:', SIGNALING_URL);
 
 // --- DOM Elements ---
 const chatSidebar = document.getElementById('chat-sidebar');
