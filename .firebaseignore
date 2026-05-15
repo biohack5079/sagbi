@@ -1,0 +1,7 @@
+# Firebase Hosting ignore rules
+# Exclude executables (Spark plan restriction)
+**/*.exe
+# Optional: exclude large binaries
+**/*.dll
+# Keep other assets
+!public/**
