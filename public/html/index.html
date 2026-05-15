@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="SAGBI AGI — 分散AIエージェントプラットフォーム。みんなのPCを繋いで巨大なAIを動かす。">
-<title>SAGBI AGI</title>
+<title>SAGBI DANCE FLOOR</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ff8eb4">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -119,8 +119,12 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
    ══════════════════════════════════════════════════════ */
 #chat-sidebar {
     position: fixed;
-    width: 340px;
-    height: 580px;
+    width: 360px;
+    height: 600px;
+    min-width: 300px;
+    min-height: 400px;
+    max-width: 90vw;
+    max-height: 90vh;
     background: var(--chat-bg);
     border-radius: 18px;
     box-shadow: 0 8px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
@@ -130,12 +134,15 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
     z-index: 9999;
     overflow: hidden;
     font-family: "Inter", sans-serif;
-    transition: opacity 0.35s; /* Remove transform transition to avoid drag lag */
-    top: 20px; /* Safe default */
-    left: 20px; /* Safe default */
+    transition: opacity 0.35s;
+    top: 20px;
+    left: 20px;
+    resize: both; /* Enable native browser resize */
 }
 #chat-sidebar.collapsed {
     height: 52px !important;
+    min-height: 52px !important;
+    resize: none;
 }
 
 /* Header */
@@ -231,11 +238,52 @@ footer { background: #ffedf0; padding: 40px 20px; text-align: center; font-size:
 /* Input area */
 #chat-input-area {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     padding: 10px 12px;
     border-top: 1px solid rgba(255,255,255,0.06);
     gap: 8px;
 }
+/* Media Controls */
+#media-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 0 5px;
+}
+.media-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+    color: white;
+}
+.media-btn:hover {
+    background: var(--primary-color);
+    transform: scale(1.1);
+    box-shadow: 0 0 15px var(--primary-color);
+}
+.media-btn.active {
+    background: #ff4b2b;
+    border-color: #ff4b2b;
+}
+
+/* Resizer handle */
+.chat-resizer {
+    background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.2) 50%);
+    border-radius: 0 0 18px 0;
+    transition: background 0.3s;
+}
+.chat-resizer:hover {
+    background: linear-gradient(135deg, transparent 50%, var(--primary-color) 50%);
+}
+
 #chat-input {
     flex: 1;
     background: var(--chat-surface);
@@ -394,21 +442,29 @@ function re() { document.fm.reset(); }
 <div id="chat-sidebar">
     <div id="chat-header">
         <div class="chat-controls">
-            <button id="chat-back-btn" class="chat-btn" title="戻る">←</button>
-            <h3 id="chat-title">SAGBI AGI へ質問</h3>
-        </div>
-        <div class="chat-controls">
-            <span id="chat-status" class="chat-status offline">オフライン</span>
-            <button id="chat-manual-btn" class="chat-btn" title="説明書">?</button>
-        </div>
+        <div id="chat-status-dot"></div>
+        <div id="chat-title">SAGBI DANCE FLOOR</div>
+        <div style="flex:1"></div>
+        <button class="chat-btn" id="install-btn" title="Install App" style="display:none">📥</button>
+        <button class="chat-btn" id="chat-close-btn" title="Toggle Size">−</button>
     </div>
     <div id="agent-preview">
         <canvas id="agent-canvas"></canvas>
     </div>
     <div id="chat-messages"></div>
     <div id="chat-input-area">
-        <input type="text" id="chat-input" placeholder="何でも聞いてください…" autocomplete="off">
-        <button id="chat-send-btn" aria-label="送信">➤</button>
+        <div id="media-controls">
+            <button class="media-btn" id="cam-btn" title="Camera">📷</button>
+            <button class="media-btn" id="mic-btn" title="Microphone">🎤</button>
+            <button class="media-btn" id="file-btn" title="Attach File">📎</button>
+            <input type="file" id="hidden-file-input" style="display:none" multiple>
+        </div>
+        <div style="display:flex; gap:8px; align-items:flex-end;">
+            <textarea id="chat-input" placeholder="メッセージを入力... (Shift+Enterで送信)" rows="1"></textarea>
+            <button id="chat-send-btn">
+                <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+        </div>
     </div>
 </div>
 

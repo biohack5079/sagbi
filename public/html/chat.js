@@ -1,206 +1,103 @@
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-
 /**
- * SAGBI AGI Chat Module - Multimodal & Bilingual App Version
+ * SAGBI AGI - Sagbi-chan Chat Client
+ * Features: Floating UI, Gestures, Multimodal, PWA, Media Controls
  */
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// ── Configuration ──────────────────────────────────────────
+// --- Constants & Config ---
+const SIGNALING_URL = new URLSearchParams(window.location.search).get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
+const GLB_MODEL_PATH = 'https://sagbuntu.web.app/agent.glb';
 const urlParams = new URLSearchParams(window.location.search);
-const SIGNALING_URL = urlParams.get('s') || 
-                      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-                        ? 'ws://localhost:8080/ws/chat' 
-                        : 'wss://sagbi-signal.example.com/ws/chat');
-
-const GLB_MODEL_PATH = '/g1m/g1-m_chan.glb';
-
-// ── i18n Labels ────────────────────────────────────────────
-const i18n = {
-  ja: {
-    title: "SAGBI AGI へ質問",
-    placeholder: "何でも聞いてください（画像ペースト可）…",
-    online: "オンライン",
-    offline: "オフライン",
-    connecting: "接続中…",
-    disconnect: "切断",
-    error: "エラー",
-    offlineMsg: "現在オフラインです。サーバーに接続してからもう一度お試しください。",
-    manual: "【SAGBI AGI 使い方】\n1. 下の入力欄に質問を入力して送信。\n2. 画像をクリップボードから貼り付け(Ctrl+V)て送信可能。\n3. アバターが分散AIの回答を代弁します。",
-    greetings: ['こんにちは！何か質問はありますか？ 🤖', 'SAGBI AGI へようこそ！お手伝いできることはありますか？']
-  },
-  en: {
-    title: "Ask SAGBI AGI",
-    placeholder: "Ask anything (Paste image too)...",
-    online: "Online",
-    offline: "Offline",
-    connecting: "Connecting...",
-    disconnect: "Disconnected",
-    error: "Error",
-    offlineMsg: "Currently offline. Please connect to the signaling server first.",
-    manual: "[SAGBI AGI Manual]\n1. Type your question in the input below.\n2. You can paste images from clipboard (Ctrl+V).\n3. The avatar represents the distributed AI response.",
-    greetings: ['Hello! Any questions? 🤖', 'Welcome to SAGBI AGI! How can I help you?']
-  }
-};
 const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
-const t = i18n[lang];
 
-// ── State ──────────────────────────────────────────────────
+// --- DOM Elements ---
+const chatSidebar = document.getElementById('chat-sidebar');
+const chatHeader = document.getElementById('chat-header');
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const chatSendBtn = document.getElementById('chat-send-btn');
+const chatStatus = document.getElementById('chat-status-dot');
+const agentCanvas = document.getElementById('agent-canvas');
+
+// --- Global State ---
 let ws = null;
-let wsReconnectAttempts = 0;
-const MAX_RECONNECT = 10;
-const RECONNECT_BASE_MS = 2000;
 let isConnected = false;
-let threeRenderer, threeScene, threeCamera, threeModel, threeClock;
 let currentImageBase64 = null;
+let threeScene, threeCamera, threeRenderer, threeClock, threeModel;
+let isDragging = false;
+let deferredPrompt = null;
 
-// ── DOM refs ───────────────────────────────────────────────
-let chatSidebar, chatHeader, chatMessages, chatInput, chatSendBtn, chatStatus, agentCanvas;
-let chatBackBtn, chatManualBtn, chatTitle;
+// --- Gestures (G1:M compatible) ---
+const GESTURES = {
+  wave: { bone: 'RightUpperArm', rot: [-1.2, 0, 1.5] },
+  nod: { bone: 'Head', rot: [0.3, 0, 0] },
+  joy: { action: 'jump' },
+  reset: { bone: 'RightUpperArm', rot: [0, 0, 0] }
+};
 
+// --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
-  chatSidebar  = document.getElementById('chat-sidebar');
-  chatHeader   = document.getElementById('chat-header');
-  chatMessages = document.getElementById('chat-messages');
-  chatInput    = document.getElementById('chat-input');
-  chatSendBtn  = document.getElementById('chat-send-btn');
-  chatStatus   = document.getElementById('chat-status');
-  agentCanvas  = document.getElementById('agent-canvas');
-  chatBackBtn  = document.getElementById('chat-back-btn');
-  chatManualBtn = document.getElementById('chat-manual-btn');
-  chatTitle    = document.getElementById('chat-title');
-
-  if (!chatSidebar || !chatMessages || !chatInput) return;
-
-  // Apply i18n
-  chatTitle.textContent = t.title;
-  chatInput.placeholder = t.placeholder;
-
   initFloatingUI();
-
-  chatSendBtn.addEventListener('click', sendMessage);
-  chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  });
-  
-  // Image Paste Listener
-  chatInput.addEventListener('paste', handlePaste);
-
-  chatBackBtn.onclick = (e) => { e.stopPropagation(); window.history.back(); };
-  chatManualBtn.onclick = (e) => { e.stopPropagation(); alert(t.manual); };
-
-  const greeting = t.greetings[Math.floor(Math.random() * t.greetings.length)];
-  addMessage(greeting, false);
-
   connectWS();
   if (agentCanvas) initThreeAgent();
+  
+  // Welcome message
+  const msg = lang === 'ja' ? "SAGBI DANCE FLOORへようこそ！何をお手伝いしようか？" : "Welcome to SAGBI DANCE FLOOR! How can I help you today?";
+  addMessage(msg, false);
+
+  // Event Listeners
+  chatSendBtn.onclick = sendMessage;
+  chatInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+  window.addEventListener('paste', handlePaste);
 });
 
-
-function handlePaste(e) {
-  const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-  for (const item of items) {
-    if (item.type.indexOf('image') !== -1) {
-      const blob = item.getAsFile();
-      processImage(blob);
-    }
-  }
-}
-
-// Plower-style image processing: Resize to 1024px and convert to JPG
-function processImage(blob) {
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    const tempImg = new Image();
-    tempImg.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX_SIZE = 1024;
-      let width = tempImg.width;
-      let height = tempImg.height;
-      if (width > height) {
-        if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
-      } else {
-        if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-      }
-      canvas.width = width; canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(tempImg, 0, 0, width, height);
-      currentImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
-      addMessage(`[Image attached]`, true, true);
-    };
-    tempImg.src = event.target.result;
-  };
-  reader.readAsDataURL(blob);
-}
-
+// --- Floating UI & Window Management ---
 function initFloatingUI() {
   let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-  let isDragging = false;
-
-  // Initial setup: ensure absolute positioning
-  chatSidebar.style.bottom = 'auto';
-  chatSidebar.style.right = 'auto';
-  chatSidebar.style.transform = 'none';
+  chatSidebar.style.bottom = 'auto'; chatSidebar.style.right = 'auto'; chatSidebar.style.transform = 'none';
 
   const saved = JSON.parse(localStorage.getItem('sagbiChatState')) || {};
   
   const applyInitialPos = () => {
     if (saved.top) {
-      chatSidebar.style.top = saved.top;
-      chatSidebar.style.left = saved.left;
-      chatSidebar.style.width = saved.width || '340px';
-      chatSidebar.style.height = saved.height || '580px';
-    } else if (urlParams.get('app') === '1' || urlParams.get('s')) {
-      // Center for App Mode
-      const startTop = (window.innerHeight - 580) / 2;
-      const startLeft = (window.innerWidth - 340) / 2;
-      chatSidebar.style.top = Math.max(50, startTop) + 'px';
-      chatSidebar.style.left = Math.max(50, startLeft) + 'px';
+      chatSidebar.style.top = saved.top; chatSidebar.style.left = saved.left;
+      chatSidebar.style.width = saved.width || '360px'; chatSidebar.style.height = saved.height || '600px';
     } else {
-      // Default bottom-right for web mode
-      chatSidebar.style.top = (window.innerHeight - 600) + 'px';
-      chatSidebar.style.left = (window.innerWidth - 360) + 'px';
+      const isApp = urlParams.get('app') === '1' || urlParams.get('s');
+      const startTop = isApp ? (window.innerHeight - 600) / 2 : (window.innerHeight - 620);
+      const startLeft = isApp ? (window.innerWidth - 360) / 2 : (window.innerWidth - 380);
+      chatSidebar.style.top = Math.max(20, startTop) + 'px';
+      chatSidebar.style.left = Math.max(20, startLeft) + 'px';
     }
-
     if (saved.collapsed) chatSidebar.classList.add('collapsed');
   };
 
-  // Wait a bit to ensure innerHeight is correct
   setTimeout(applyInitialPos, 100);
 
-  // App Mode Background
   if (urlParams.get('app') === '1' || urlParams.get('s')) {
     document.body.style.background = 'radial-gradient(circle at center, #1e1e2f 0%, #0a0a0f 100%)';
     const wrapper = document.getElementById('wrapper');
     if (wrapper) wrapper.style.display = 'none';
-    chatSidebar.classList.remove('collapsed');
   }
 
   // Drag Support
   chatHeader.addEventListener('mousedown', (e) => {
     if (e.target.closest('.chat-btn')) return;
     e.preventDefault();
-    pos3 = e.clientX; pos4 = e.clientY;
-    isDragging = false;
+    pos3 = e.clientX; pos4 = e.clientY; isDragging = false;
     document.addEventListener('mousemove', elementDrag);
     document.addEventListener('mouseup', closeDragElement);
   });
 
   function elementDrag(e) {
     isDragging = true;
-    pos1 = pos3 - e.clientX;
-    pos2 = pos4 - e.clientY;
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    
-    // Clamp to screen (ensure header is always reachable)
+    pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+    pos3 = e.clientX; pos4 = e.clientY;
     let newTop = chatSidebar.offsetTop - pos2;
     let newLeft = chatSidebar.offsetLeft - pos1;
-    const rect = chatSidebar.getBoundingClientRect();
-    
-    chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 60, newTop)) + "px";
-    chatSidebar.style.left = Math.max(-rect.width + 100, Math.min(window.innerWidth - 100, newLeft)) + "px";
-    chatSidebar.style.bottom = 'auto';
-    chatSidebar.style.right = 'auto';
+    chatSidebar.style.top = Math.max(0, Math.min(window.innerHeight - 50, newTop)) + "px";
+    chatSidebar.style.left = Math.max(-200, Math.min(window.innerWidth - 100, newLeft)) + "px";
   }
 
   function closeDragElement() {
@@ -210,174 +107,202 @@ function initFloatingUI() {
     saveState();
   }
 
-  // Resize Support (Right-bottom corner)
-  const resizer = document.createElement('div');
-  resizer.className = 'chat-resizer';
-  resizer.style.width = '20px'; resizer.style.height = '20px';
-  resizer.style.position = 'absolute'; resizer.style.right = '0'; resizer.style.bottom = '0';
-  resizer.style.cursor = 'nwse-resize'; resizer.style.zIndex = '1000';
-  chatSidebar.appendChild(resizer);
-
-  resizer.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    document.addEventListener('mousemove', elementResize);
-    document.addEventListener('mouseup', stopResize);
-  });
-
-  function elementResize(e) {
-    const width = e.clientX - chatSidebar.offsetLeft;
-    const height = e.clientY - chatSidebar.offsetTop;
-    if (width > 280) chatSidebar.style.width = width + 'px';
-    if (height > 300) chatSidebar.style.height = height + 'px';
-  }
-
-  function stopResize() {
-    document.removeEventListener('mousemove', elementResize);
-    document.removeEventListener('mouseup', stopResize);
-    saveState();
-  }
-
   function saveState() {
     localStorage.setItem('sagbiChatState', JSON.stringify({
-      top: chatSidebar.style.top,
-      left: chatSidebar.style.left,
-      width: chatSidebar.style.width,
-      height: chatSidebar.style.height,
+      top: chatSidebar.style.top, left: chatSidebar.style.left,
+      width: chatSidebar.style.width, height: chatSidebar.style.height,
       collapsed: chatSidebar.classList.contains('collapsed')
     }));
   }
 
-  window.addEventListener('resize', () => {
-    const rect = chatSidebar.getBoundingClientRect();
-    if (rect.top > window.innerHeight) chatSidebar.style.top = (window.innerHeight - 100) + 'px';
-    if (rect.left > window.innerWidth) chatSidebar.style.left = (window.innerWidth - 100) + 'px';
-  });
+  // Browser Resize Sync
+  const resizeObserver = new ResizeObserver(() => saveState());
+  resizeObserver.observe(chatSidebar);
 }
 
+// --- PWA & Media Controls ---
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); deferredPrompt = e;
+  document.getElementById('install-btn').style.display = 'block';
+});
+
+document.getElementById('install-btn').onclick = async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') document.getElementById('install-btn').style.display = 'none';
+  deferredPrompt = null;
+};
+
+document.getElementById('cam-btn').onclick = () => {
+  const btn = document.getElementById('cam-btn');
+  btn.classList.toggle('active');
+  addMessage(btn.classList.contains('active') ? "カメラをオンにしたよ！" : "カメラをオフにしたよ。", false, true);
+};
+
+document.getElementById('mic-btn').onclick = () => {
+  const btn = document.getElementById('mic-btn');
+  btn.classList.toggle('active');
+  addMessage(btn.classList.contains('active') ? "マイクをオンにしたよ！" : "マイクをオフにしたよ。", false, true);
+};
+
+document.getElementById('file-btn').onclick = () => document.getElementById('hidden-file-input').click();
+document.getElementById('hidden-file-input').onchange = (e) => {
+  if (e.target.files.length > 0) processImage(e.target.files[0]);
+};
+
+// --- Image Processing ---
+function handlePaste(e) {
+  const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+  for (const item of items) {
+    if (item.type.indexOf('image') !== -1) processImage(item.getAsFile());
+  }
+}
+
+function processImage(blob) {
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const tempImg = new Image();
+    tempImg.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_SIZE = 1024;
+      let w = tempImg.width, h = tempImg.height;
+      if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } }
+      else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(tempImg, 0, 0, w, h);
+      currentImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+      addMessage("画像を確認したよ！送る準備はバッチリ。", false, true);
+    };
+    tempImg.src = event.target.result;
+  };
+  reader.readAsDataURL(blob);
+}
+
+// --- WebSocket & Messaging ---
 function connectWS() {
   if (ws && ws.readyState === WebSocket.OPEN) return;
-  console.log('[SAGBI] Connecting to:', SIGNALING_URL);
-  setStatus(t.connecting, 'connecting');
-  
-  try {
-    ws = new WebSocket(SIGNALING_URL);
-  } catch (err) {
-    console.error('[SAGBI] WebSocket init error:', err);
-    setStatus(t.offline, 'offline');
-    scheduleReconnect();
-    return;
-  }
-
+  chatStatus.style.background = '#ffeb3b'; // Connecting
+  ws = new WebSocket(SIGNALING_URL);
   ws.onopen = () => {
-    console.log('[SAGBI] WebSocket connected');
-    wsReconnectAttempts = 0; isConnected = true; setStatus(t.online, 'online');
+    isConnected = true;
+    chatStatus.style.background = '#4caf50'; // Online
     ws.send(JSON.stringify({ type: 'register', payload: { role: 'web_chat' } }));
   };
   ws.onmessage = (evt) => {
-    try {
-      const msg = JSON.parse(evt.data);
-      if (msg.type === 'chat_response') {
-        addMessage(msg.payload?.text || '…', false);
-        animateAgent('talk');
-      } else if (msg.type === 'system') {
-        addMessage(`[system] ${msg.payload?.text || ''}`, false, true);
-      }
-    } catch (e) {
-      console.warn('[SAGBI] Failed to parse message:', e);
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'chat_response') {
+      const text = parseGestures(msg.payload?.text || '...');
+      addMessage(text, false);
+      animateAgent('talk');
     }
   };
-  ws.onerror = (err) => {
-    console.error('[SAGBI] WebSocket error:', err);
-    setStatus(t.error, 'offline');
-  };
-  ws.onclose = (e) => {
-    console.warn('[SAGBI] WebSocket closed:', e.code, e.reason);
-    isConnected = false; setStatus(t.disconnect, 'offline'); scheduleReconnect();
+  ws.onclose = () => {
+    isConnected = false;
+    chatStatus.style.background = '#f44336'; // Offline
+    setTimeout(connectWS, 3000);
   };
 }
 
-function scheduleReconnect() {
-  if (wsReconnectAttempts >= MAX_RECONNECT) return;
-  wsReconnectAttempts++;
-  setTimeout(connectWS, Math.min(RECONNECT_BASE_MS * Math.pow(2, wsReconnectAttempts - 1), 30000));
+function parseGestures(text) {
+  const tags = text.match(/\[([a-z]+)\]/gi);
+  if (tags) {
+    tags.forEach(tag => {
+      const key = tag.slice(1, -1).toLowerCase();
+      if (GESTURES[key]) applyGesture(GESTURES[key]);
+      setTimeout(() => applyGesture(GESTURES.reset), 2000);
+    });
+  }
+  return text.replace(/\[([a-z]+)\]/gi, '').trim();
+}
+
+function applyGesture(g) {
+  if (!threeModel) return;
+  if (g.bone) {
+    const bone = findBone(threeModel, g.bone);
+    if (bone) bone.rotation.set(...g.rot);
+  }
+}
+
+function findBone(node, name) {
+  if (node.name.toLowerCase() === name.toLowerCase()) return node;
+  for (const child of node.children) {
+    const res = findBone(child, name);
+    if (res) return res;
+  }
+  return null;
 }
 
 function sendMessage() {
   const text = chatInput.value.trim();
   if (!text && !currentImageBase64) return;
-  if (text) addMessage(text, true);
-  chatInput.value = '';
-  if (isConnected && ws) {
-    ws.send(JSON.stringify({ 
-      type: 'chat_message', 
-      payload: { text, image: currentImageBase64, lang: lang } 
-    }));
+  addMessage(text, true);
+  chatInput.value = ''; chatInput.rows = 1;
+  if (isConnected) {
+    ws.send(JSON.stringify({ type: 'chat_message', payload: { text, image: currentImageBase64, lang } }));
     currentImageBase64 = null;
-  } else {
-    setTimeout(() => addMessage(t.offlineMsg, false), 600);
   }
 }
 
-function addMessage(text, isUser, isSystem) {
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-bubble ' + (isUser ? 'user' : 'bot') + (isSystem ? ' system' : '');
-  bubble.textContent = text;
-  chatMessages.appendChild(bubble);
+function addMessage(text, isUser, isSystem = false) {
+  const div = document.createElement('div');
+  div.className = `message ${isUser ? 'user' : 'bot'} ${isSystem ? 'system' : ''}`;
+  
+  if (isUser && currentImageBase64) {
+    const img = document.createElement('img');
+    img.src = currentImageBase64;
+    img.style.maxWidth = '100%'; img.style.borderRadius = '10px';
+    div.appendChild(img);
+  }
+
+  const content = document.createElement('div');
+  content.className = 'message-content';
+  content.textContent = text;
+  div.appendChild(content);
+
+  chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function setStatus(label, cls) {
-  if (!chatStatus) return;
-  chatStatus.textContent = label;
-  chatStatus.className = 'chat-status ' + cls;
-}
-
+// --- Three.js & Agent Visualization ---
 function initThreeAgent() {
-  const W = agentCanvas.clientWidth || 280, H = 220;
+  const W = agentCanvas.clientWidth || 300, H = 220;
   threeScene = new THREE.Scene();
   threeCamera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
-  threeCamera.position.set(0, 1.2, 3.5);
-  threeCamera.lookAt(0, 1.0, 0);
+  threeCamera.position.set(0, 1.3, 3.5);
   threeRenderer = new THREE.WebGLRenderer({ canvas: agentCanvas, alpha: true, antialias: true });
-  threeRenderer.setPixelRatio(window.devicePixelRatio);
   threeRenderer.setSize(W, H);
-  threeScene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
-  dirLight.position.set(1, 2, 1);
-  threeScene.add(dirLight);
-  threeClock = new THREE.Clock();
-
-  const gltfLoader = new GLTFLoader();
-  gltfLoader.load(GLB_MODEL_PATH, (gltf) => {
+  threeScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  
+  const loader = new GLTFLoader();
+  loader.load(GLB_MODEL_PATH, (gltf) => {
     threeModel = gltf.scene;
-    threeModel.scale.set(1, 1, 1);
     threeScene.add(threeModel);
-  }, undefined, (err) => {
-    console.warn('[SAGBI Chat] GLB load failed:', err);
   });
-
+  
+  threeClock = new THREE.Clock();
   animateThree();
 }
 
 function animateThree() {
   requestAnimationFrame(animateThree);
-  if (!threeRenderer || !threeScene || !threeCamera) return;
-  const t = threeClock.getElapsedTime();
-  if (threeModel) {
-    threeModel.rotation.y = Math.sin(t * 0.5) * 0.15;
-    threeModel.position.y = Math.sin(t * 1.2) * 0.02;
+  if (threeRenderer && threeScene && threeCamera) {
+    const t = threeClock.getElapsedTime();
+    if (threeModel) {
+      threeModel.rotation.y = Math.sin(t * 0.5) * 0.1;
+      threeModel.position.y = Math.sin(t * 1.5) * 0.02;
+    }
+    threeRenderer.render(threeScene, threeCamera);
   }
-  threeRenderer.render(threeScene, threeCamera);
 }
 
 function animateAgent(action) {
-  if (!threeModel) return;
   if (action === 'talk') {
+    // Sagbi-chan bounces when talking
     let count = 0;
     const id = setInterval(() => {
-      threeModel.position.y = Math.sin(count * 0.8) * 0.04;
-      count++;
-      if (count > 20) { clearInterval(id); threeModel.position.y = 0; }
-    }, 50);
+      if (threeModel) threeModel.position.y += Math.sin(count) * 0.05;
+      count++; if (count > 10) { clearInterval(id); if (threeModel) threeModel.position.y = 0; }
+    }, 60);
   }
 }

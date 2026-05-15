@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -261,28 +262,55 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
-			// Query Ollama in background
-			go func(client *Client, payload ChatPayload) {
-				answer, err := queryOllama(payload)
-				if err != nil {
-					log.Printf("[Ollama] Error: %v", err)
-					answer = "申し訳ありません、AIサービスに接続できませんでした。"
+			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
+			go func(payload ChatPayload, clientID string) {
+				ragDir := "rag"
+				_ = os.MkdirAll(ragDir, 0755)
+				sessionID := time.Now().Format("20060102_150405")
+				filename := fmt.Sprintf("%s/story_%s_%s.txt", ragDir, sessionID, clientID)
+
+				// ストーリーの構築
+				var story bytes.Buffer
+				story.WriteString(fmt.Sprintf("--- SESSION: %s ---\n", sessionID))
+				story.WriteString(fmt.Sprintf("[USER:%s] [TYPE:TEXT] %s\n", clientID, payload.Text))
+				
+				if payload.Image != "" {
+					story.WriteString(fmt.Sprintf("[USER:%s] [TYPE:IMAGE] attached\n", clientID))
+					// 画像ファイルは別途保存し、ストーリーからリンク
+					imgData := payload.Image
+					if idx := bytes.Index([]byte(imgData), []byte(",")); idx != -1 {
+						imgData = imgData[idx+1:]
+					}
+					decoded, _ := base64.StdEncoding.DecodeString(imgData)
+					imgFilename := fmt.Sprintf("%s/media_%s_%s.jpg", ragDir, sessionID, clientID)
+					_ = os.WriteFile(imgFilename, decoded, 0644)
+					story.WriteString(fmt.Sprintf("[LINK:IMAGE] %s\n", imgFilename))
 				}
 
-				resp := WSMessage{
-					Type: "chat_response",
-					From: "sagbi-agi",
-				}
-				respPayload, _ := json.Marshal(ChatPayload{Text: answer})
-				resp.Payload = respPayload
-				respBytes, _ := json.Marshal(resp)
+				// AIの回答もストーリーに加えるために、queryOllama後に追記する仕組みへ
+				go func(client *Client, p ChatPayload, st *bytes.Buffer, fName string) {
+					answer, err := queryOllama(p)
+					if err != nil {
+						answer = "AI接続エラー"
+					}
+					
+					// ストーリーにAIの回答を追記
+					st.WriteString(fmt.Sprintf("[AI:Sagbi] [TYPE:TEXT] %s\n", answer))
+					st.WriteString("--- END SESSION ---\n")
+					_ = os.WriteFile(fName, st.Bytes(), 0644)
 
-				select {
-				case client.send <- respBytes:
-				default:
-				}
-			}(c, p)
-
+					// クライアントへ送信
+					resp := WSMessage{Type: "chat_response", From: "SAGBI DANCE FLOOR"}
+					respPayload, _ := json.Marshal(ChatPayload{Text: answer})
+					resp.Payload = respPayload
+					respBytes, _ := json.Marshal(resp)
+					select {
+					case client.send <- respBytes:
+					default:
+					}
+				}(c, p, &story, filename)
+			}(p, c.id)
+		
 		case "signal":
 			// Forward signaling messages (offer/answer/candidate) to target
 			hub.broadcast(raw, c)
