@@ -4,18 +4,18 @@ Translations: [日本語](./README.ja.md)
 
 > **Spirit Bomb Computing**: Connect everyone's PCs to power a massive, decentralised AI agent.
 
-SAGBI AGI is a distributed artificial general intelligence platform that turns ordinary consumer hardware into a collaborative supercomputer. Each participant installs a lightweight agent that shares spare CPU, memory, and GPU resources across a peer-to-peer mesh. When someone asks a complex question, the system automatically distributes inference workloads across the network — like a digital *Genki-dama* (元気玉).
+SAGBI AGI is a distributed artificial general intelligence platform that turns ordinary consumer hardware into a collaborative supercomputer. Each participant installs a lightweight agent that shares spare CPU, memory, and GPU resources across a peer-to-peer mesh. When someone asks a complex question, the system automatically distributes inference workloads across the network — like a digital *Genki-dama* .
 
 ---
 
-## 🚀 Quick Start / クイックスタート
+## 🚀 Quick Start
 
 ### English
 1. **Run Installer**: Use the installer in `installer/` for your OS to set up Ollama.
 2. **Start Server**: Run `./start_sagbi.sh` in your terminal.
 3. **Browser Access**: A browser will open automatically with the AI chat interface.
 
-### 📱 Mobile Sharing / スマホとの共有
+### 📱 Mobile Sharing
 Scan the **QR code** in the terminal with your phone. Access your PC's AI from anywhere via Cloudflare Tunnel. **All questions and answers are synced in real-time** across all connected devices.
 
 ---
