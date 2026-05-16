@@ -584,27 +584,15 @@
       window.sagbiWS.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data);
+          const isChat = msg.type === 'chat_response' || msg.type === 'chat_message';
+
           if (msg.type === 'registered') {
             myClientId = JSON.parse(msg.payload).id;
             terminalLog("My Client ID: " + myClientId);
-          } else if (msg.type === 'chat_response') {
-            const isAI = (msg.from === "SAGBI DANCE FLOOR");
-            const isMe = (msg.from === "User (" + myClientId + ")");
-            
-            if (isAI) {
-              // ストリーミング表示
-              if (!lastAiBubble || msg.payload.text.length > 50) { // 新規回答か長い回答なら新調
-                 lastAiBubble = addMessage("", false, "Sagbi");
-              }
-              const textNode = lastAiBubble.querySelector('.content-text');
-              textNode.textContent += msg.payload.text;
-              chatMessages.scrollTop = chatMessages.scrollHeight;
-
-              if (window.handleAgentResponse) window.handleAgentResponse(msg.payload);
-            } else if (!isMe) {
-              // 他人の質問を表示
-              addMessage(msg.payload.text, true, msg.from);
-              lastAiBubble = null; // AIのターンではないのでリセット
+          } else if (isChat) {
+            // 描画ロジックを chat.js 側に集約し、重複を排除
+            if (window.handleAgentResponse) {
+              window.handleAgentResponse(msg.payload, msg.from);
             }
           }
         } catch (e) { console.error(e); }
@@ -644,17 +632,17 @@
     function sendMessage() {
       const text = chatInput.value.trim();
       if (!text && !currentImageBase64) return;
-      addMessage(text, true);
-      lastAiBubble = null; // 自分の送信時はAIバブルをクリア
+      
+      const tempId = "user-" + Date.now();
+      // ローカルで即座に表示（IDを付与）
+      const bubble = addMessage(text, true);
+      bubble.id = tempId;
+
       if (window.sagbiWS && window.sagbiWS.readyState === 1) {
-        // CRITICAL FIX: Strip Base64 header for AI recognition
-        let imgData = null;
-        if (currentImageBase64) {
-          imgData = currentImageBase64.split(',')[1];
-        }
+        let imgData = currentImageBase64 ? currentImageBase64.split(',')[1] : null;
         window.sagbiWS.send(JSON.stringify({
           type: 'chat_message',
-          payload: { text, image: imgData, lang }
+          payload: { text, image: imgData, lang, id: tempId }
         }));
       }
       chatInput.value = '';

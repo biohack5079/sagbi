@@ -257,9 +257,6 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 			onChunk(chunk.Response)
 		}
 		if chunk.Done {
-			if chunkBuffer.Len() > 0 {
-				onChunk(chunkBuffer.String())
-			}
 			break
 		}
 	}
@@ -336,13 +333,14 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
 			// 質問の同期：ユーザーの質問をそのまま chat_message 型として他者に転送する。
-			// 型を分けることで、エージェントが自分の発言に反応するのを防ぎます。
-			msg.From = "User (" + c.id + ")"
-			// 送信元にIDを付与（任意）
-			p.ID = fmt.Sprintf("user-%d", time.Now().UnixNano())
+			msg.From = fmt.Sprintf("User (%s)", c.id)
+			// IDが空の場合のみ新規発行
+			if p.ID == "" {
+				p.ID = fmt.Sprintf("user-%d", time.Now().UnixNano())
+			}
 			msg.Payload, _ = json.Marshal(p)
 			broadcastRaw, _ := json.Marshal(msg)
-			hub.broadcast(broadcastRaw, nil) // 全員（スマホ・PC両方）に同期
+			hub.broadcast(broadcastRaw, nil) // 全員に同期（送信者含む）
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) {
@@ -402,7 +400,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				} else {
 					// 完了通知を送信
 					respMsg.Payload, _ = json.Marshal(ChatPayload{
-						Text: "",
+						Text: fullAnswer.String(),
 						ID:   aiResponseID,
 						Done: true,
 					})

@@ -25,55 +25,49 @@ const GESTURES = {
 };
 
 // --- Agent Response Handler (Exposed to index.html) ---
-window.handleAgentResponse = (payload) => {
+window.handleAgentResponse = (payload, fromName) => {
   if (!payload) return;
-  const msgId = payload.id || 'ai-fallback';
-
-  // 完了フラグの処理
-  if (payload.done) {
-    responseBuffers.delete(msgId);
-    responseElements.delete(msgId);
-    return;
-  }
-
-  if (!payload.text) return;
-
-  // バッファの初期化と更新
-  const isFirstChunk = !responseBuffers.has(msgId);
-  if (isFirstChunk) {
-    responseBuffers.set(msgId, "");
-  }
-  responseBuffers.set(msgId, responseBuffers.get(msgId) + payload.text);
-  const fullText = responseBuffers.get(msgId);
+  const msgId = payload.id;
+  const isAi = msgId && msgId.startsWith('ai-');
+  const fullText = payload.text || '';
 
   // 1. 既存の吹き出しを探す
-  let bubble = responseElements.get(msgId) || document.getElementById(msgId);
+  let bubble = msgId ? (responseElements.get(msgId) || document.getElementById(msgId)) : null;
 
-  if (!bubble && !pendingMessages.has(msgId)) {
+  if (!bubble && msgId && !pendingMessages.has(msgId)) {
     pendingMessages.add(msgId);
     if (window.addMessage) {
-      const initialDisplay = parseGestures(fullText);
-      const newEl = window.addMessage(initialDisplay || '...', false);
+      // AIなら左側（false）、ユーザーなら右側（true）
+      const isUser = msgId && msgId.startsWith('user-');
+      const senderName = fromName || (isUser ? 'You' : 'Sagbi');
+      const newEl = window.addMessage(parseGestures(fullText) || '...', isUser, senderName);
 
-      // 要素の特定を強化
-      bubble = newEl || document.querySelector('.message:last-child');
-
-      if (bubble) {
-        bubble.setAttribute('id', msgId);
-        responseElements.set(msgId, bubble);
+      if (newEl) {
+        newEl.id = msgId;
+        responseElements.set(msgId, newEl);
+        bubble = newEl;
       }
     }
     pendingMessages.delete(msgId);
   }
 
   if (bubble) {
-    // 既存の吹き出しのテキストのみを書き換える（parseGesturesでタグを除去して全文表示）
-    const textContainer = bubble.querySelector('.text-content') || bubble.querySelector('.text') || bubble.querySelector('p') || bubble;
-    textContainer.innerText = parseGestures(fullText);
+    const textContainer = bubble.querySelector('.content-text') || bubble;
+    if (fullText) {
+      // textContentを累積全文で「上書き」することで、細切れ表示を解消
+      textContainer.textContent = parseGestures(fullText);
+    }
+  }
+
+  // 完了フラグのクリーンアップ
+  if (payload.done && msgId) {
+    responseBuffers.delete(msgId);
+    responseElements.delete(msgId);
+    return;
   }
 
   // 2. Animate Agent
-  animateAgent('talk');
+  if (isAi) animateAgent('talk');
 };
 
 function parseGestures(text) {
