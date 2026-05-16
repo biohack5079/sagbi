@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SAGBI AGI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* refer0421.html (JINテーマ) の配色と構造を再現 */
+        :root {
+            --primary-color: #ff8eb4;
+            --nav-bg: #d16477;
+            --text-color: #333;
+            --bg-color: #f7f7f7;
+            --border-color: #eee;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: "Quicksand", sans-serif;
+            line-height: 1.8;
+        }
+
+        #header-box {
+            background: #fff;
+            padding: 30px 20px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        #site-info a {
+            font-size: 24px;
+            font-weight: bold;
+            text-decoration: none;
+            color: var(--text-color);
+        }
+
+        #nav-container {
+            background: var(--nav-bg);
+            padding: 10px 0;
+        }
+
+        .menu-box {
+            display: flex;
+            justify-content: center;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .menu-box li {
+            margin: 0 15px;
+        }
+
+        .menu-box a {
+            color: #fff;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        #contents {
+            max-width: 1100px;
+            margin: 40px auto;
+            display: flex;
+            flex-wrap: wrap;
+            padding: 0 20px;
+            gap: 30px;
+        }
+
+        #main-contents {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .cps-post-main {
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-card {
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .form-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .form-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .form-table input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100px;
+        }
+
+        h2 {
+            border-left: 5px solid var(--primary-color);
+            padding: 5px 15px;
+            margin: 30px 0 15px;
+            font-size: 1.2rem;
+            background: #fafafa;
+        }
+
+        #sidebar {
+            width: 300px;
+        }
+
+        .widget {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .widgettitle {
+            font-weight: bold;
+            border-bottom: 2px solid var(--primary-color);
+            margin-bottom: 15px;
+            padding-bottom: 5px;
+        }
+
+        .widget a {
+            color: var(--text-color);
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        button {
+            background: var(--primary-color);
+            color: #fff;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        footer {
+            background: #ffedf0;
+            padding: 40px 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+
+        @media (max-width: 850px) {
+            #contents {
+                flex-direction: column;
+            }
+
+            #sidebar {
+                width: 100%;
+            }
+        }
+        
+        /* Chat Sidebar Styles */
+        #chat-sidebar {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 450px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(255,255,255,0.3);
+            z-index: 1000;
+            overflow: hidden;
+            font-family: "Quicksand", sans-serif;
+            transition: all 0.3s ease;
+        }
+        #chat-sidebar.minimized {
+            height: 40px;
+        }
+        #chat-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            text-align: center;
+        }
+        #agent-canvas {
+            width: 100%;
+            height: 150px;
+            background: #ffe6eb;
+        }
+        #chat-messages {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.5);
+        }
+        .msg-user { text-align: right; color: #4285F4; margin-bottom: 5px; }
+        .msg-agent { text-align: left; color: #d16477; margin-bottom: 5px; }
+        #chat-status {
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+            padding: 2px;
+            background: #f7f7f7;
+        }
+        #chat-input-area {
+            display: flex;
+            padding: 5px;
+            border-top: 1px solid var(--border-color);
+            background: #fff;
+        }
+        #chat-input {
+            flex: 1;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #send-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin-left: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+    <!-- Three.js Import Map -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="text/javascript">
+        function x() {
+            var e = parseFloat(document.fm.per.value);
+            var b = parseFloat(document.fm.pbr.value);
+            var d = parseFloat(document.fm.dy.value);
+            if (isNaN(e) || isNaN(b) || isNaN(d)) return;
+            var x_val = 2 * Math.pow(d / b / b / e, 1 / 4);
+
+            if (isNaN(x_val)) {
+                document.fm.ex.value = "算定不能";
+            } else {
+                document.fm.ex.value = x_val.toFixed(4);
+            }
+
+            var q = parseFloat(document.fm.qo.value);
+            var p = q * x_val;
+            if (!isNaN(p)) document.fm.pr.value = Math.round(p);
+
+            var n = parseFloat(document.fm.hy.value);
+            if (isNaN(n)) return;
+            var g = b / e - b * d / 100;
+            var r = x_val * Math.pow(1 + g, n) + 0.8 * (d / 100) * (Math.pow(1 + g, n) - 1) / g;
+            var t = q * r;
+            if (!isNaN(r)) document.fm.ex.value = r.toFixed(4);
+            if (!isNaN(t)) document.fm.pr.value = Math.round(t);
+        }
+        function re() { document.fm.reset(); }
+    </script>
+</head>
+
+<body>
+    <div id="wrapper">
+        <div id="header-box">
+            <div id="site-info"><a href="/">SAGBI AGI</a></div>
+        </div>
+        <div id="nav-container">
+            <ul class="menu-box">
+                <li><a href="/">HOME</a></li>
+                <li><a href="profile.html">WIKI</a></li>
+                <li><a href="javascript:void(0);"
+                        onclick="window.open('./kitaiti.html', 'kitaiti', 'width=500, height=600');">別窓</a></li>
+                <li><a href="https://github.com/biohack5079/sagbi/releases/download/v1.0.0/sagbi_install.exe" download>Install</a></li>
+            </ul>
+        </div>
+        <div id="contents">
+            <main id="main-contents">
+                <article class="cps-post-main">
+                    <div class="form-card">
+                        <form name="fm">
+                            <table class="form-table">
+                                <tr>
+                                    <td>PER</td>
+                                    <td><input type="text" name="per" onkeyup="x()"> 倍</td>
+                                </tr>
+                                <tr>
+                                    <td>PBR</td>
+                                    <td><input type="text" name="pbr" onkeyup="x()"> 倍</td>
+                                </tr>
+                                <tr>
+                                    <td>利回り</td>
+                                    <td><input type="text" name="dy" onkeyup="x()"> ％</td>
+                                </tr>
+                                <tr>
+                                    <td>期待値</td>
+                                    <td><input type="text" name="ex" readonly> 倍</td>
+                                </tr>
+                                <tr>
+                                    <td>株価</td>
+                                    <td><input type="text" name="qo" onkeyup="x()"> 円</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>目標</strong></td>
+                                    <td><input type="text" name="pr" readonly> 円</td>
+                                </tr>
+                                <tr>
+                                    <td>保有年</td>
+                                    <td><input type="text" name="hy" onkeyup="x()"> 年</td>
+                                </tr>
+                            </table>
+                            <div style="text-align:center; margin-top:20px;"><button type="button"
+                                    onclick="re()">リセット</button></div>
+                        </form>
+                    </div>
+                    <h2>使い方</h2>
+                    <p>PER=e, PBR=b, 利回り=d とし、期待値xを計算します。</p>
+                    <img src="x.png" alt="割安性" width="180">
+                    <p>n年後のトータルリターンを理論株価として算出します。</p>
+                    <img src="n.png" alt="期待値" width="300">
+                </article>
+            </main>
+            <aside id="sidebar">
+                <div class="widget">
+                    <div class="widgettitle">APP</div>
+                    <ul>
+                        <li><a href="https://sagbuntu.web.app/plower.html" target="_blank"
+                                rel="noopener noreferrer">Plower (RAG App)</a></li>
+                        <li><a href="https://cybernetcall.onrender.com/" target="_blank"
+                                rel="noopener noreferrer">Cybernet Call (P2P)</a></li>
+                        <li><a href="https://g1m-pwa.onrender.com/" target="_blank" rel="noopener noreferrer">G1:M
+                                (Avatar Service)</a></li>
+                    </ul>
+                </div>
+                <div class="widget">
+                    <div class="widgettitle">SNS</div>
+                    <ul>
+                        <li><a href="https://x.com/sagbuntu" target="_blank" rel="noopener noreferrer">X (Twitter)</a>
+                        </li>
+                        <li><a href="https://qiita.com/Intelligence" target="_blank" rel="noopener noreferrer">QUIITA
+                                (Tec Blog)</a></li>
+                    </ul>
+                </div>
+                <div class="widget">
+                    <div class="widgettitle">LINK</div>
+                    <ul>
+                        <li><a href="https://github.com/biohack5079" target="_blank" rel="noopener noreferrer">GitHub
+                                (biohack5079)</a></li>
+                        <li><a href="http://firebird-5079.appspot.com" target="_blank"
+                                rel="noopener noreferrer">FireBird (GCP HP)</a></li>
+                        <li><a href="http://kabuka.s1007.xrea.com/kablog" target="_blank"
+                                rel="noopener noreferrer">KaBlog (WordPress)</a></li>
+                        <li><a href="http://kabuka.s1007.xrea.com/periody" target="_blank"
+                                rel="noopener noreferrer">Periody (Python BBS)</a></li>
+                        <li><a href="http://kabuka.s1007.xrea.com/nand" target="_blank"
+                                rel="noopener noreferrer">NandGame (Logic Calculator)</a></li>
+                        <li><a href="https://huggingface.co/G1mAvaterUniverse" target="_blank"
+                                rel="noopener noreferrer">HuggingFace (G1m AGI)</a></li>
+                    </ul>
+                </div>
+            </aside>
+        </div>
+        <footer>
+            <div>© 2036 SAGBI AGI / Biohack5079</div>
+        </footer>
+    </div>
+
+    <!-- Chat Sidebar -->
+    <div id="chat-sidebar">
+        <div id="chat-header" onclick="document.getElementById('chat-sidebar').classList.toggle('minimized')">SAGBI AI</div>
+        <canvas id="agent-canvas"></canvas>
+        <div id="chat-messages"></div>
+        <div id="chat-status">Initializing...</div>
+        <div id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Ask me anything...">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+
+    <script type="module" src="chat.js"></script>
+    <script>
+        const statusEl = document.getElementById('chat-status');
+        const msgsEl = document.getElementById('chat-messages');
+        const inputEl = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        let ws = null;
+
+        window.updateStatus = (msg) => {
+            if (statusEl) statusEl.textContent = msg;
+            if (msg === "") statusEl.style.display = "none";
+            else statusEl.style.display = "block";
+        };
+
+        window.addMessage = (text, isUser) => {
+            const div = document.createElement('div');
+            div.className = isUser ? 'msg-user' : 'msg-agent';
+            div.textContent = text;
+            msgsEl.appendChild(div);
+            msgsEl.scrollTop = msgsEl.scrollHeight;
+        };
+
+        function connectWebSocket() {
+            const params = new URLSearchParams(window.location.search);
+            const wssUrl = params.get('s');
+            if (!wssUrl) {
+                window.updateStatus('Disconnected (No Signaling URL in ?s=)');
+                return;
+            }
+
+            window.updateStatus('Connecting...');
+            ws = new WebSocket(wssUrl);
+            
+            ws.onopen = () => {
+                window.updateStatus('Connected to AI');
+                ws.send(JSON.stringify({
+                    type: 'register',
+                    payload: { uuid: 'web_' + Math.random().toString(36).substring(7) }
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (window.handleAgentResponse) {
+                        window.handleAgentResponse({ text: data.payload?.text || data.text || JSON.stringify(data) });
+                    } else {
+                        window.addMessage(data.payload?.text || data.text || "...", false);
+                    }
+                } catch (err) {
+                    console.error("WS parse error", err);
+                }
+            };
+
+            ws.onclose = () => {
+                window.updateStatus('Disconnected. Reconnecting...');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        const sendMessage = () => {
+            const text = inputEl.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            window.addMessage(text, true);
+            ws.send(JSON.stringify({
+                type: 'chat_message',
+                payload: { text: text }
+            }));
+            inputEl.value = '';
+        };
+
+        sendBtn.onclick = sendMessage;
+        inputEl.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>

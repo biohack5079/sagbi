@@ -1,0 +1,127 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔒CyberNetCall</title>
+  <link rel="manifest" href="{% static 'cnc/manifest.json' %}">
+  <link rel="icon" href="{% static 'cnc/icons/icon-192x192.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'cnc/icons/icon-192x192.png' %}">
+  <link rel="apple-touch-icon-precomposed" href="{% static 'cnc/icons/icon-192x192.png' %}">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="{% static 'cnc/style.css' %}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/2.3.10/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js" defer></script>
+  <script src="https://unpkg.com/idb@7/build/umd.js" defer></script>
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <script src="https://js.stripe.com/v3/"></script>
+  <script src="{% static 'cnc/app.js' %}" defer></script>
+</head>
+<body>
+  <h1>🔒CyberNetCall</h1>
+  <div id="connectionStatus"></div>
+  <!-- <p>Scan the QR code or let your friend scan yours to connect.</p> -->
+
+  <canvas id="qrcode" style="width: 100%; max-width: 300px; height: auto; display: block; margin: 0 auto;"></canvas>
+
+  <div style="display: flex; justify-content: space-between; margin: 1rem auto 0; max-width: 300px;">
+    <button id="startScanButton">Scan QR Code</button>
+    <button id="reloadButton">Reload</button>
+  </div>
+  <div id="qr-reader" style="width: 100%; max-width: 400px; margin: 20px auto; display: none;"></div>
+  <div id="qr-reader-results" style="margin-top: 10px; font-style: italic;"></div>
+
+  <section class="section">
+    <!-- 友達リストがここに表示されます -->
+    <div id="friendList" class="friend-list-container"></div>
+  </section>
+
+  <!--
+  <section class="section">
+    <h2>Subscription (Optional)</h2>
+    <p>Subscribe to enable advanced notification features.</p>
+    <button id="subscribeButton">Subscribe</button>
+    <button id="manageSubscriptionButton" style="display: none;">Manage Subscription</button>
+  </section>
+  -->
+
+  <section class="section">
+    <h2>Direct Mail</h2>
+    <div>
+      <label for="onlineFriendSelector">Send to:</label>
+      <select id="onlineFriendSelector">
+        <option value="">-- Select a friend --</option>
+      </select>
+    </div>
+    <input type="text" id="messageInput" placeholder="Type a private message..." aria-label="Private Message">
+    <button id="sendMessage">Send Private</button>
+    <div id="messageArea" class="message-area"></div>
+    <div style="margin-top: 1rem;">
+        <label for="directFileInput">Share File (Private):</label>
+        <input type="file" id="directFileInput">
+        <button id="sendDirectFile">Send File</button>
+        <span id="direct-file-transfer-status" style="margin-left: 10px; font-style: italic;"></span>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Group Chat</h2>
+    <label for="postInput" class="visually-hidden">Post Friends</label>
+    <input type="text" id="postInput" placeholder="Write your post..." aria-label="Post Content">
+    <button id="sendPost">Post</button>
+    <div id="postArea" class="post-area"></div>
+    <div style="margin-top: 1rem;">
+        <label for="groupFileInput">Share File (Broadcast):</label>
+        <input type="file" id="groupFileInput">
+        <button id="sendGroupFile">Send File to All</button>
+        <span id="group-file-transfer-status" style="margin-left: 10px; font-style: italic;"></span>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Video Meeting</h2>
+    
+    <div class="video-container">
+      <div class="video-scroll-container">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <!-- Remote video elements will be added here by app.js -->
+      </div>
+      <div class="video-scroll-controls">
+        <button id="scrollLeft">←</button>
+        <button id="scrollRight">→</button>
+      </div>
+    </div>
+    <div class="call-controls">
+      <button id="callButton" aria-label="Start/End Group Meeting" title="Start/End Group Meeting">📹</button>
+      <button id="frontCamButton" aria-label="Toggle Front Camera" title="Toggle Front Camera" style="display: none;">Front Cam</button>
+      <button id="backCamButton" aria-label="Toggle Back Camera" title="Toggle Back Camera" style="display: none;">Back Cam</button>
+    </div>
+  </section>
+
+  <script>
+    const scrollLeftButton = document.getElementById('scrollLeft');
+    const scrollRightButton = document.getElementById('scrollRight');
+    const videoScrollContainer = document.querySelector('.video-scroll-container');
+    const reloadButton = document.getElementById('reloadButton');
+
+    if (reloadButton) {
+      reloadButton.addEventListener('click', () => {
+        window.location.reload();
+      });
+    }
+
+    if (scrollLeftButton && scrollRightButton && videoScrollContainer) {
+      scrollLeftButton.addEventListener('click', () => {
+        videoScrollContainer.scrollBy({ left: -300, behavior: 'smooth' });
+      });
+      scrollRightButton.addEventListener('click', () => {
+        videoScrollContainer.scrollBy({ left: 300, behavior: 'smooth' });
+      });
+    }
+  </script>
+
+</body>
+</html>
