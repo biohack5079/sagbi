@@ -1,5 +1,5 @@
 【SAGBI AGI プロジェクト概要】
-SAGBI (Spirit AGent Bomb Infrastructure) AGI は、ユーザーの余剰計算リソースを統合し、巨大な知能を構築する分散型AGIプラットフォームです。
+SAGBI (Secure And General Believable Intelligence / Spirit AGent Bomb Infrastructure) AGI は、ユーザーの余剰計算リソースを統合し、安全で汎用的な「人間らしい」知能を構築する分散型AGIプラットフォームです。
 主な機能：
 - 3Dアバターによるインタラクティブなチャット
 - マルチモーダル（画像認識）対応

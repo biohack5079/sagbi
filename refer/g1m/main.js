@@ -721,7 +721,7 @@ async function spawnBot() {
     isLoadingBot = true;
     loadingIds.add('bot');
 
-    await loadAvatar('g1-m_chan.glb', 'bot', 'G1:Mちゃん (AI)');
+    await loadAvatar('agent.glb', 'bot', 'sagbiちゃん (AI)');
     if (vrms['bot']) {
         vrms['bot'].followLocalMotion = false;
         vrms['bot'].action = null;
@@ -1054,8 +1054,8 @@ if (micBtn) {
 // --- i18n Support ---
 const labels = {
     ja: {
-        logo: "G1:m Dance Floor",
-        chatPlaceholder: "G1:mちゃんに話しかける...",
+        logo: "sagbi Dance Floor",
+        chatPlaceholder: "sagbiちゃんに話しかける...",
         micLabel: "マイク",
         cameraLabel: "カメラ",
         frontLabel: "前面",
@@ -1065,8 +1065,8 @@ const labels = {
         participants: "参加者: "
     },
     en: {
-        logo: "G1:m Dance Floor",
-        chatPlaceholder: "Talk to G1:m-chan...",
+        logo: "sagbi Dance Floor",
+        chatPlaceholder: "Talk to sagbi-chan...",
         micLabel: "Mic",
         cameraLabel: "Camera",
         frontLabel: "Front",
@@ -1135,12 +1135,20 @@ async function translateText(text, targetLang) {
 /**
  * Generate system prompt based on detected language
  */
-function generateSystemPrompt(language) {
-    if (language === 'ja') {
-        return `あなたは「G1:Mちゃん」というキャラクターです。ユーザーが日本語で話しかけてくれました。親切で、楽しく、サポーティブな性格で日本語で答えてください。短く、会話的な応答を心がけてください。`;
-    } else {
-        return `You are "G1:M-chan", a cheerful and supportive character. The user is speaking to you in English. Please respond in English with a friendly and conversational tone. Keep your response concise and engaging.`;
+async function generateSystemPrompt(language) {
+    const fileName = language === 'ja' ? 'systemprompt_ja.md' : 'systemprompt_en.md';
+    try {
+        const response = await fetch(`./${fileName}`);
+        if (response.ok) {
+            return await response.text();
+        }
+    } catch (e) {
+        log(`SystemPrompt Load Error: ${e.message}`, '#f55');
     }
+    // Fallback in case of fetch failure
+    return language === 'ja' 
+        ? "あなたはsagbiちゃんです。フレンドリーに答えてください。" 
+        : "You are sagbi-chan. Please respond in a friendly tone.";
 }
 
 async function speak(text, sender = '') {
@@ -1196,11 +1204,11 @@ async function handleChat(text, option = {}) {
     if (isAlone) {
         const botResponse = handleBotCommand(text);
         if (botResponse) {
-            speak(botResponse, 'G1:M');
+            speak(botResponse, 'sagbi');
         } else {
-            log('Chat: AI (G1:M) processing...');
+            log('Chat: AI (sagbi) processing...');
             // Generate system prompt based on detected language
-            const systemPrompt = generateSystemPrompt(detectedLang);
+            const systemPrompt = await generateSystemPrompt(detectedLang);
             const fullPrompt = `${systemPrompt}\n\nUser: ${text}`;
             const answer = await performLlmRequest(fullPrompt);
             
@@ -1213,7 +1221,7 @@ async function handleChat(text, option = {}) {
                 log(`Chat: English translation: ${englishTranslation}`);
             }
             
-            speak(displayText, 'G1:M');
+            speak(displayText, 'sagbi');
         }
     } else {
         // Participants are present: Exclusive mode
@@ -1222,7 +1230,7 @@ async function handleChat(text, option = {}) {
             const helpMsg = detectedLang === 'ja' 
                 ? "ヘルプメニュー:\n1. ダンスモード\n2. グループ紹介\n3. システム情報"
                 : "HELP MENU:\n1. Dance Mode\n2. Group Intro\n3. System Info";
-            speak(helpMsg, 'G1:M (System)');
+            speak(helpMsg, 'sagbi (System)');
         }
 
         const data = { type: 'chat', payload: sendText };

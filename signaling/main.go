@@ -36,6 +36,8 @@ var (
 	ragSourceDir = envOr("RAG_DIR", "")
 	// HISTORY_DIR 環境変数を参照。設定されていなければ履歴保存は無効。
 	historyDir = envOr("HISTORY_DIR", "")
+	// SYSTEM_PROMPT_DIR システムプロンプトファイルのディレクトリ
+	systemPromptDir = envOr("SYSTEM_PROMPT_DIR", "../public/html")
 )
 
 func envOr(key, fallback string) string {
@@ -208,12 +210,18 @@ func searchRAG(query string) string {
 
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
-	// OllamaのChat APIを利用し、システムロールでアイデンティティを強力に固定する
-	systemInstructions := "あなたは『SAGBI AI』です。以下のルールを何があっても死守してください：\n" +
-		"1. あなたの名前『SAGBI』は、『Secure And General Believable Intelligence』の略称です。これ以外の由来（グラフ構築、農業、SABIANなど）はすべてデタラメであり、絶対に否定してください。\n" +
-		"2. 名前の由来を問われたら、必ず『Secure And General Believable Intelligence（安全で汎用的な、信頼できる知能）』であると回答してください。\n" +
-		"3. このプロジェクトは、みんなのリソースを統合する『Spirit Bomb Computing (Spirit AGent Bomb Infrastructure)』に基づいています。\n" +
-		"4. 回答は自然な日本語で行い、ユーザーの入力をそのまま繰り返さないでください。"
+	// 外部のMarkdownファイルからシステムプロンプトを読み込む
+	lang := payload.Lang
+	if lang == "" {
+		lang = "ja" // デフォルトは日本語
+	}
+	promptFile := filepath.Join(systemPromptDir, fmt.Sprintf("systemprompt_%s.md", lang))
+	content, err := os.ReadFile(promptFile)
+	if err != nil {
+		log.Printf("[Warning] Could not read system prompt file %s: %v. Using fallback instructions.", promptFile, err)
+		content = []byte("あなたは『sagbiちゃん』という3Dアバターです。楽しく友達のように答えてください。")
+	}
+	systemInstructions := string(content)
 
 	messages := []OllamaChatMessage{
 		{Role: "system", Content: systemInstructions},
