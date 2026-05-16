@@ -111,6 +111,19 @@ else
     log "RAGディレクトリを $RAG_PATH に設定し、signaling/.env に保存しました。"
 fi
 
+echo "-------------------------------------------------------"
+echo "会話履歴（ログ）を保存するフォルダのフルパスを入力してください。"
+echo "（GitHub管理外のディレクトリを推奨します。未入力なら保存しません）"
+read -p "History Path: " HIST_PATH
+
+if [ -z "$HIST_PATH" ]; then
+    log "履歴保存を無効にしました。"
+else
+    mkdir -p "$HIST_PATH"
+    echo "HISTORY_DIR=$HIST_PATH" >> signaling/.env
+    log "履歴保存先を $HIST_PATH に設定しました。"
+fi
+
 # -------------------
 # 4. Optional: Pull extra models (example)
 # -------------------

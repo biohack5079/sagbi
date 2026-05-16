@@ -25,6 +25,8 @@ var (
 	ollamaModel = envOr("OLLAMA_MODEL", "gemma3:4b-it-q4_K_M")
 	// RAG_DIR 環境変数を参照。設定されていなければRAG機能はデフォルトで無効。
 	ragSourceDir = envOr("RAG_DIR", "")
+	// HISTORY_DIR 環境変数を参照。設定されていなければ履歴保存は無効。
+	historyDir = envOr("HISTORY_DIR", "")
 )
 
 func envOr(key, fallback string) string {
@@ -290,10 +292,15 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) { // このgoroutineはRAGとは直接関係ないが、履歴保存ロジック
-				logDir := "history" // RAG用の知識と履歴保存先を分ける
-				_ = os.MkdirAll(logDir, 0755)
+				// 履歴保存ディレクトリが設定されていない場合は何もしない
+				if historyDir == "" {
+					log.Printf("[Chat] History storage disabled (HISTORY_DIR not set).")
+					goto queryOnly
+				}
+
+				_ = os.MkdirAll(historyDir, 0755)
 				sessionID := time.Now().Format("20060102_150405")
-				filename := fmt.Sprintf("%s/story_%s_%s.txt", logDir, sessionID, clientID)
+				filename := fmt.Sprintf("%s/story_%s_%s.txt", historyDir, sessionID, clientID)
 
 				// ストーリーの構築
 				var story bytes.Buffer
@@ -308,13 +315,14 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 						imgData = imgData[idx+1:]
 					}
 					decoded, _ := base64.StdEncoding.DecodeString(imgData)
-					imgFilename := fmt.Sprintf("%s/media_%s_%s.jpg", logDir, sessionID, clientID)
+					imgFilename := fmt.Sprintf("%s/media_%s_%s.jpg", historyDir, sessionID, clientID)
 					_ = os.WriteFile(imgFilename, decoded, 0644)
 					story.WriteString(fmt.Sprintf("[LINK:IMAGE] %s\n", imgFilename))
 				}
 
 				// AIの回答もストーリーに加えるために、queryOllama後に追記する仕組みへ
 				go func(client *Client, p ChatPayload, st *bytes.Buffer, fName string) {
+				queryOnly:
 					answer, err := queryOllama(p)
 					if err != nil {
 						answer = fmt.Sprintf("AI接続エラー: %v (Model: %s)", err, ollamaModel)
@@ -323,7 +331,9 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					// ストーリーにAIの回答を追記
 					st.WriteString(fmt.Sprintf("[AI:Sagbi] [TYPE:TEXT] %s\n", answer))
 					st.WriteString("--- END SESSION ---\n")
-					_ = os.WriteFile(fName, st.Bytes(), 0644)
+					if historyDir != "" {
+						_ = os.WriteFile(fName, st.Bytes(), 0644)
+					}
 
 					// 同期：AIの回答を全員（自分含む）にブロードキャスト
 					resp := WSMessage{Type: "chat_response", From: "SAGBI DANCE FLOOR"}

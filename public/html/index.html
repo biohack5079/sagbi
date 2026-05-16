@@ -553,7 +553,16 @@
 
     function connectWS() {
       const urlParams = new URLSearchParams(window.location.search);
-      const SIGNALING_URL = urlParams.get('s') || `ws://${window.location.hostname}:8080/ws/chat`;
+      
+      // ★ここに Cloudflare のトンネルURLを入力してください
+      // 例: "wss://xxxx-xxxx-xxxx.trycloudflare.com/ws/chat"
+      const MY_HOME_SERVER_URL = ""; 
+
+      let SIGNALING_URL = urlParams.get('s') || MY_HOME_SERVER_URL;
+
+      if (!SIGNALING_URL) {
+          SIGNALING_URL = window.location.protocol === 'https:' ? `wss://localhost:8080/ws/chat` : `ws://localhost:8080/ws/chat`;
+      }
       updateStatus("Connecting...");
       window.sagbiWS = new WebSocket(SIGNALING_URL);
       window.sagbiWS.onopen = () => {

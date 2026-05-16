@@ -47,12 +47,14 @@ static const wchar_t* WINDOW_TITLE  = L"SAGBI AGI Installer";
 #define IDC_MODEL_LIST     2006
 #define IDC_OPEN_HP_BTN    2007
 #define IDC_SELECT_RAG_BTN 2008
+#define IDC_SELECT_HIST_BTN 2009
 
 // ── Globals ──────────────────────────────────────────────────
 static HWND hStatus, hProgress, hInstallBtn, hModelEdit, hAddModelBtn;
-static HWND hModelList, hOpenHpBtn, hRagPathLabel;
+static HWND hModelList, hOpenHpBtn, hRagPathLabel, hHistPathLabel;
 static std::vector<std::wstring> additionalModels;
 static std::wstring selectedRagPath = L"未設定 (デフォルトを使用)";
+static std::wstring selectedHistPath = L"未設定 (保存しない)";
 static bool installComplete = false;
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -93,13 +95,16 @@ bool runCommand(const wchar_t* cmd, bool wait = true) {
 DWORD WINAPI installWorker(LPVOID lpParam) {
     HWND hwnd = (HWND)lpParam;
 
-    // RAG設定の保存 (signaling/.env に書き出す例)
+    // 設定の保存 (signaling/.env に書き出す)
+    CreateDirectoryW(L"signaling", NULL);
+    std::wofstream envFile(L"signaling/.env");
     if (selectedRagPath != L"未設定 (デフォルトを使用)") {
-        CreateDirectoryW(L"signaling", NULL);
-        std::wofstream envFile(L"signaling/.env");
         envFile << L"RAG_DIR=" << selectedRagPath << std::endl;
-        envFile.close();
     }
+    if (selectedHistPath != L"未設定 (保存しない)") {
+        envFile << L"HISTORY_DIR=" << selectedHistPath << std::endl;
+    }
+    envFile.close();
 
     // 起動用バッチファイル (run_sagbi.bat) の作成
     // start_sagbi.sh の Windows版としての役割を担います
@@ -220,18 +225,26 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         CreateWindowW(L"BUTTON", L"参照...",
             sStyle, 380, 207, 80, 25, hwnd, (HMENU)IDC_SELECT_RAG_BTN, NULL, NULL);
 
+        // History Storage Settings
+        CreateWindowW(L"STATIC", L"会話履歴の保存先:",
+            sStyle, 20, 235, 150, 25, hwnd, NULL, NULL, NULL);
+        hHistPathLabel = CreateWindowW(L"STATIC", selectedHistPath.c_str(),
+            sStyle | SS_ENDELLIPSIS, 170, 235, 200, 25, hwnd, NULL, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"参照...",
+            sStyle, 380, 232, 80, 25, hwnd, (HMENU)IDC_SELECT_HIST_BTN, NULL, NULL);
+
         // Status
         hStatus = CreateWindowW(L"STATIC", L"準備完了",
-            sStyle, 20, 240, 440, 25, hwnd, (HMENU)IDC_STATUS_LABEL, NULL, NULL);
+            sStyle, 20, 265, 440, 25, hwnd, (HMENU)IDC_STATUS_LABEL, NULL, NULL);
         hProgress = CreateWindowW(L"STATIC", L"",
-            sStyle, 20, 260, 440, 25, hwnd, (HMENU)IDC_PROGRESS_LABEL, NULL, NULL);
+            sStyle, 20, 285, 440, 25, hwnd, (HMENU)IDC_PROGRESS_LABEL, NULL, NULL);
 
         // Buttons
         hInstallBtn = CreateWindowW(L"BUTTON", L"📥 インストール開始",
-            sStyle | BS_DEFPUSHBUTTON, 20, 300, 200, 35,
+            sStyle | BS_DEFPUSHBUTTON, 20, 320, 200, 35,
             hwnd, (HMENU)IDC_INSTALL_BTN, NULL, NULL);
         hOpenHpBtn = CreateWindowW(L"BUTTON", L"🌐 SAGBI AGI を開く",
-            sStyle, 240, 300, 200, 35,
+            sStyle, 240, 320, 200, 35,
             hwnd, (HMENU)IDC_OPEN_HP_BTN, NULL, NULL);
         EnableWindow(hOpenHpBtn, FALSE);
 
@@ -269,6 +282,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     MessageBoxW(hwnd, 
                         L"ここが以降の参照フォルダになります。\n個人情報などは保存しないで下さい。", 
                         L"RAG設定の警告", MB_OK | MB_ICONWARNING);
+                }
+                CoTaskMemFree(pidl);
+            }
+            break;
+        }
+        case IDC_SELECT_HIST_BTN: {
+            BROWSEINFOW bi = { 0 };
+            bi.lpszTitle = L"会話履歴を保存するフォルダを選択してください（プロジェクト外を推奨）";
+            bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+            bi.hwndOwner = hwnd;
+            LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+            if (pidl != 0) {
+                wchar_t path[MAX_PATH];
+                if (SHGetPathFromIDListW(pidl, path)) {
+                    selectedHistPath = path;
+                    SetWindowTextW(hHistPathLabel, path);
+                    MessageBoxW(hwnd, L"履歴の保存先を設定しました。ここには個人情報が含まれる可能性があるため、公開されないよう注意してください。", L"履歴設定", MB_OK);
                 }
                 CoTaskMemFree(pidl);
             }
