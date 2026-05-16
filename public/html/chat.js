@@ -39,14 +39,17 @@ window.handleAgentResponse = (payload) => {
   if (!bubble) {
     // 新しいメッセージ：最初の1回だけ addMessage を呼ぶ
     if (window.addMessage) {
-      const text = parseGestures(payload.text || '...');
-      const el = window.addMessage(text, false);
+      const initialText = parseGestures(payload.text || '...');
+      const el = window.addMessage(initialText, false);
       // index.html側で作成された要素にIDを付与して、次回から探せるようにする
       if (el) el.id = msgId;
       else {
-        // addMessageが要素を返さない場合のフォールバック
-        const lastMsg = document.querySelector('.message:last-child');
-        if (lastMsg) lastMsg.id = msgId;
+        // DOMに反映されるのを待つために少し遅延させてIDを付与
+        setTimeout(() => {
+          const messages = document.querySelectorAll('.message');
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && !lastMsg.id) lastMsg.id = msgId;
+        }, 10);
       }
     }
   } else {

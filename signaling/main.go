@@ -177,12 +177,13 @@ func searchRAG(query string) string {
 
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
-	prompt := payload.Text
+	// AIがユーザーの質問を繰り返さず、直接回答するように指示を追加
+	prompt := "User's request: " + payload.Text + "\n\nInstructions: Answer directly. Do not repeat the user's prompt."
 
 	// Inject RAG context if available
 	context := searchRAG(payload.Text) // TODO: Optimize RAG to not read files every time
 	if context != "" {
-		prompt = "Context information:\n" + context + "\n\nUser Question: " + payload.Text
+		prompt = "Context information:\n" + context + "\n\nUser Question: " + payload.Text + "\n\nAnswer directly based on the context above."
 	}
 
 	ollamaReq := OllamaRequest{
