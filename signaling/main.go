@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -199,7 +200,11 @@ func searchRAG(query string) string {
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	// プロンプトをさらに厳格化し、挨拶などの重複を避ける指示を追加
-	prompt := "System: You are SAGBI AI. Answer directly in natural Japanese. " +
+	prompt := "System: Your name is SAGBI AI. You MUST follow these rules:\n" +
+		"1. Your name SAGBI stands for 'Secure And General Believable Intelligence' ONLY.\n" +
+		"2. The project is based on 'Spirit Bomb Computing' (Spirit AGent Bomb Infrastructure).\n" +
+		"3. Any other name origin (like Agriculture or founders) is FALSE. Do not hallucinate.\n" +
+		"4. Answer directly in natural Japanese.\n" +
 		"Do NOT include user's message in your response. Just answer the request.\nUser: " + payload.Text
 
 	// Inject RAG context if available
@@ -263,6 +268,13 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	return nil
 }
 
+// generateID produces a random hex string
+func generateID(prefix string) string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%s-%x", prefix, b)
+}
+
 // ── WebSocket handler ────────────────────────────────────────
 func handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -274,7 +286,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	c := &Client{
 		conn: conn,
 		send: make(chan []byte, 1024), // Buffer for large messages
-		id:   fmt.Sprintf("client-%d", time.Now().UnixNano()),
+		id:   generateID("client"),
 	}
 
 	hub.register(c)
@@ -336,11 +348,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			msg.From = fmt.Sprintf("User (%s)", c.id)
 			// IDが空の場合のみ新規発行
 			if p.ID == "" {
-				p.ID = fmt.Sprintf("user-%d", time.Now().UnixNano())
+				p.ID = generateID("user")
 			}
 			msg.Payload, _ = json.Marshal(p)
 			broadcastRaw, _ := json.Marshal(msg)
-			hub.broadcast(broadcastRaw, nil) // 全員に同期（送信者含む）
+			hub.broadcast(broadcastRaw, c) // 送信者を除外してブロードキャスト（自分はローカルで描画済みの為）
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) {
@@ -376,7 +388,8 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					Type: "chat_response",
 					From: "SAGBI AI",
 				}
-				aiResponseID := fmt.Sprintf("ai-%d", time.Now().UnixNano())
+				// 質問のIDに紐付けることで、再送時などの重複表示を防止
+				aiResponseID := fmt.Sprintf("ai-%s", payload.ID)
 
 				err := queryOllama(payload, func(chunk string) {
 					fullAnswer.WriteString(chunk)

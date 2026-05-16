@@ -40,10 +40,9 @@ window.handleAgentResponse = (payload, fromName) => {
       // AIなら左側（false）、ユーザーなら右側（true）
       const isUser = msgId && msgId.startsWith('user-');
       const senderName = fromName || (isUser ? 'You' : 'Sagbi');
-      const newEl = window.addMessage(parseGestures(fullText) || '...', isUser, senderName, payload.image);
+      const newEl = window.addMessage(parseGestures(fullText) || '...', isUser, senderName, payload.image, msgId);
 
       if (newEl) {
-        newEl.id = msgId;
         responseElements.set(msgId, newEl);
         bubble = newEl;
       }
@@ -61,8 +60,11 @@ window.handleAgentResponse = (payload, fromName) => {
 
   // 完了フラグのクリーンアップ
   if (payload.done && msgId) {
-    responseBuffers.delete(msgId);
-    responseElements.delete(msgId);
+    // 少しだけ待ってからMapから削除（連続するパケット対策）
+    setTimeout(() => {
+      responseBuffers.delete(msgId);
+      responseElements.delete(msgId);
+    }, 500);
     return;
   }
 

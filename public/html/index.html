@@ -590,8 +590,12 @@
             myClientId = JSON.parse(msg.payload).id;
             terminalLog("My Client ID: " + myClientId);
           } else if (isChat) {
-            // 描画ロジックを chat.js 側に集約し、重複を排除
-            if (window.handleAgentResponse) {
+            const isMe = msg.from && msg.from.includes(myClientId);
+            const isAi = msg.from === "SAGBI AI";
+
+            // 1. 自分が送信したメッセージの「サーバーからのエコー」は無視する（既にローカルで描画済みの為）
+            // 2. AIの返信、または他人のメッセージ（スマホ等）のみを描画する
+            if (window.handleAgentResponse && (isAi || !isMe)) {
               window.handleAgentResponse(msg.payload, msg.from);
             }
           }
@@ -604,9 +608,10 @@
       };
     }
 
-    window.addMessage = (text, isUser, fromName, image) => {
+    window.addMessage = (text, isUser, fromName, image, id) => {
       const div = document.createElement('div');
       div.className = `chat-bubble ${isUser ? 'user' : 'bot'}`;
+      if (id) div.id = id; // 即座にIDを付与
 
       if (image) {
         const img = document.createElement('img');
@@ -634,16 +639,18 @@
       const text = chatInput.value.trim();
       if (!text && !currentImageBase64) return;
       
-      const tempId = "user-" + Date.now();
+      // UUIDを発行してローカルとサーバーで完全に同期させる
+      const tempId = "user-" + crypto.randomUUID();
       let imgData = currentImageBase64 ? currentImageBase64.split(',')[1] : null;
 
-      // ローカルで即座に表示（handleAgentResponse を経由させることで ID 管理を chat.js に一任する）
+      // ローカルで即座に表示
       if (window.handleAgentResponse) {
         window.handleAgentResponse({
           id: tempId,
           text: text,
           image: currentImageBase64, // プレビュー用にフルデータを使用
-          lang: lang
+          lang: lang,
+          done: true // ユーザー発言は即時完了扱い
         }, "You");
       }
 
