@@ -1,5 +1,7 @@
 # SAGBI AGI — Distributed Local AI Agent Platform
 
+Translations: [日本語](./README.ja.md)
+
 > **Spirit Bomb Computing**: Connect everyone's PCs to power a massive, decentralised AI agent.
 
 SAGBI AGI is a distributed artificial general intelligence platform that turns ordinary consumer hardware into a collaborative supercomputer. Each participant installs a lightweight agent that shares spare CPU, memory, and GPU resources across a peer-to-peer mesh. When someone asks a complex question, the system automatically distributes inference workloads across the network — like a digital *Genki-dama* (元気玉).
@@ -13,15 +15,8 @@ SAGBI AGI is a distributed artificial general intelligence platform that turns o
 2. **Start Server**: Run `./start_sagbi.sh` in your terminal.
 3. **Browser Access**: A browser will open automatically with the AI chat interface.
 
-### 日本語
-1. **インストーラーの実行**: `installer/` フォルダにある各OS用のインストーラーを実行し、Ollamaをセットアップします。
-2. **サーバー起動**: ターミナルで `./start_sagbi.sh` を実行します。
-3. **ブラウザアクセス**: 自動的にブラウザが開き、AIチャット画面が表示されます。
-
 ### 📱 Mobile Sharing / スマホとの共有
 Scan the **QR code** in the terminal with your phone. Access your PC's AI from anywhere via Cloudflare Tunnel. **All questions and answers are synced in real-time** across all connected devices.
-
-起動時に表示される **QRコード** をスマホでスキャンしてください。Cloudflare Tunnel経由で、どこからでもPCのAIを利用できます。**質問と回答の両方が、全デバイスでリアルタイムに同期**されます。
 
 ---
 
