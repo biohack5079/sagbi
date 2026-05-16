@@ -254,9 +254,7 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 		}
 
 		if chunk.Response != "" {
-			chunkBuffer.WriteString(chunk.Response)
-			onChunk(chunkBuffer.String())
-			chunkBuffer.Reset()
+			onChunk(chunk.Response)
 		}
 		if chunk.Done {
 			if chunkBuffer.Len() > 0 {
@@ -344,7 +342,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			p.ID = fmt.Sprintf("user-%d", time.Now().UnixNano())
 			msg.Payload, _ = json.Marshal(p)
 			broadcastRaw, _ := json.Marshal(msg)
-			hub.broadcast(broadcastRaw, c)
+			hub.broadcast(broadcastRaw, nil) // 全員（スマホ・PC両方）に同期
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) {
@@ -386,7 +384,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					fullAnswer.WriteString(chunk)
 					// 逐次ブロードキャスト
 					respMsg.Payload, _ = json.Marshal(ChatPayload{
-						Text: chunk,
+						Text: fullAnswer.String(), // 累積した文字列を送信することで細切れを解消
 						ID:   aiResponseID,
 						Done: false,
 					})
