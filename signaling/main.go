@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -162,10 +163,11 @@ func searchRAG(query string) string {
 
 	var context bytes.Buffer
 	for _, file := range files {
-		if !file.IsDir() && (len(file.Name()) > 4 && file.Name()[len(file.Name())-4:] == ".txt") { // .txt ファイルのみを対象
-			content, err := os.ReadFile(ragSourceDir + string(os.PathSeparator) + file.Name()) // クロスプラットフォーム対応
+		// .txt または .md ファイルを対象
+		if !file.IsDir() && (filepath.Ext(file.Name()) == ".txt" || filepath.Ext(file.Name()) == ".md") {
+			content, err := os.ReadFile(filepath.Join(ragSourceDir, file.Name()))
 			if err == nil {
-				context.WriteString(string(content) + "\n---\n")
+				context.WriteString(fmt.Sprintf("--- File: %s ---\n%s\n", file.Name(), string(content)))
 			}
 		}
 	}
@@ -314,74 +316,72 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			hub.broadcast(broadcastRaw, nil)
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
-			go func(payload ChatPayload, clientID string) { // このgoroutineはRAGとは直接関係ないが、履歴保存ロジック
-				// 履歴保存ディレクトリが設定されていない場合は何もしない
+			go func(payload ChatPayload, clientID string) {
+				var story bytes.Buffer
+				sessionID := time.Now().Format("20060102_150405")
+				filename := ""
+
 				if historyDir == "" {
 					log.Printf("[Chat] History storage disabled (HISTORY_DIR not set).")
-					goto queryOnly
+				} else {
+					_ = os.MkdirAll(historyDir, 0755)
+					filename = filepath.Join(historyDir, fmt.Sprintf("story_%s_%s.txt", sessionID, clientID))
+
+					story.WriteString(fmt.Sprintf("--- SESSION: %s ---\n", sessionID))
+					story.WriteString(fmt.Sprintf("[USER:%s] %s\n", clientID, payload.Text))
+
+					if payload.Image != "" {
+						story.WriteString(fmt.Sprintf("[USER:%s] [IMAGE] attached\n", clientID))
+						imgData := payload.Image
+						if idx := bytes.Index([]byte(imgData), []byte(",")); idx != -1 {
+							imgData = imgData[idx+1:]
+						}
+						decoded, _ := base64.StdEncoding.DecodeString(imgData)
+						imgFilename := filepath.Join(historyDir, fmt.Sprintf("media_%s_%s.jpg", sessionID, clientID))
+						_ = os.WriteFile(imgFilename, decoded, 0644)
+						story.WriteString(fmt.Sprintf("[LINK:IMAGE] %s\n", imgFilename))
+					}
 				}
 
-				_ = os.MkdirAll(historyDir, 0755)
-				sessionID := time.Now().Format("20060102_150405")
-				filename := fmt.Sprintf("%s/story_%s_%s.txt", historyDir, sessionID, clientID)
-
-				// ストーリーの構築
-				var story bytes.Buffer
-				story.WriteString(fmt.Sprintf("--- SESSION: %s ---\n", sessionID))
-				story.WriteString(fmt.Sprintf("[USER:%s] [TYPE:TEXT] %s\n", clientID, payload.Text))
-
-				if payload.Image != "" {
-					story.WriteString(fmt.Sprintf("[USER:%s] [TYPE:IMAGE] attached\n", clientID))
-					// 画像ファイルは別途保存し、ストーリーからリンク
-					imgData := payload.Image
-					if idx := bytes.Index([]byte(imgData), []byte(",")); idx != -1 {
-						imgData = imgData[idx+1:]
-					}
-					decoded, _ := base64.StdEncoding.DecodeString(imgData)
-					imgFilename := fmt.Sprintf("%s/media_%s_%s.jpg", historyDir, sessionID, clientID)
-					_ = os.WriteFile(imgFilename, decoded, 0644)
-					story.WriteString(fmt.Sprintf("[LINK:IMAGE] %s\n", imgFilename))
+				// AI回答生成
+				var fullAnswer bytes.Buffer
+				respMsg := WSMessage{
+					Type: "chat_response",
+					From: "SAGBI AI",
 				}
 
-				// AIの回答もストーリーに加えるために、queryOllama後に追記する仕組みへ
-				go func(client *Client, p ChatPayload, st *bytes.Buffer, fName string) {
-				queryOnly:
-					var fullAnswer bytes.Buffer
+				err := queryOllama(payload, func(chunk string) {
+					fullAnswer.WriteString(chunk)
+					// 逐次ブロードキャスト
+					respMsg.Payload, _ = json.Marshal(ChatPayload{Text: chunk})
+					respBytes, _ := json.Marshal(respMsg)
+					hub.broadcast(respBytes, nil)
+				})
 
-					// 送信用のベースメッセージ
-					respMsg := WSMessage{
-						Type: "chat_response",
-						From: "SAGBI DANCE FLOOR",
+				if err != nil {
+					log.Printf("[Error] Ollama: %v", err)
+					errMsg := fmt.Sprintf("AI接続エラー: %v", err)
+					fullAnswer.WriteString(errMsg)
+					respMsg.Payload, _ = json.Marshal(ChatPayload{Text: errMsg})
+					respBytes, _ := json.Marshal(respMsg)
+					hub.broadcast(respBytes, nil)
+				}
+
+				// 回答完了後に履歴を書き出し
+				if filename != "" {
+					story.WriteString(fmt.Sprintf("[AI:Sagbi] %s\n", fullAnswer.String()))
+					story.WriteString("--- END SESSION ---\n")
+					if err := os.WriteFile(filename, story.Bytes(), 0644); err != nil {
+						log.Printf("[Error] Save history failed: %v", err)
 					}
-
-					err := queryOllama(p, func(chunk string) {
-						fullAnswer.WriteString(chunk)
-						// 各トークンを即座にブロードキャスト
-						respMsg.Payload, _ = json.Marshal(ChatPayload{Text: chunk})
-						respBytes, _ := json.Marshal(respMsg)
-						hub.broadcast(respBytes, nil)
-					})
-
-					if err != nil {
-						errMsg := fmt.Sprintf("AI接続エラー: %v", err)
-						fullAnswer.WriteString(errMsg)
-						respMsg.Payload, _ = json.Marshal(ChatPayload{Text: errMsg})
-						respBytes, _ := json.Marshal(respMsg)
-						hub.broadcast(respBytes, nil)
-					}
-
-					// 全回答が完了してからストーリーに保存
-					st.WriteString(fmt.Sprintf("[AI:Sagbi] [TYPE:TEXT] %s\n", fullAnswer.String()))
-					st.WriteString("--- END SESSION ---\n")
-					if historyDir != "" {
-						_ = os.WriteFile(fName, st.Bytes(), 0644)
-					}
-				}(c, p, &story, filename)
+				}
 			}(p, c.id)
 
 		case "signal":
-			// Forward signaling messages (offer/answer/candidate) to target
-			hub.broadcast(raw, c)
+			// 送信元IDを付与して転送（WebRTC同期に必須）
+			msg.From = c.id
+			enrichedRaw, _ := json.Marshal(msg)
+			hub.broadcast(enrichedRaw, c)
 
 		default:
 			log.Printf("[WS] Unknown message type: %s", msg.Type)
