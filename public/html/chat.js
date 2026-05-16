@@ -18,10 +18,12 @@ const pendingMessages = new Set();
 
 // --- Gestures (G1:M compatible) ---
 const GESTURES = {
-  wave: { bone: 'RightUpperArm', rot: [-1.2, 0, 1.5] },
-  nod: { bone: 'Head', rot: [0.3, 0, 0] },
+  wave: { bone: 'RightUpperArm', rot: [-1.2, 0, 1.2] },
+  nod: { bone: 'Head', rot: [0.4, 0, 0] },
   joy: { action: 'jump' },
-  reset: { bone: 'RightUpperArm', rot: [0, 0, 0] }
+  leftHandUp: { bones: ['LeftUpperArm'], rot: [0, 0, -1.4] },
+  rightHandUp: { bones: ['RightUpperArm'], rot: [0, 0, 1.4] },
+  reset: { pose: 'natural' }
 };
 
 // --- Agent Response Handler (Exposed to index.html) ---
@@ -69,7 +71,11 @@ window.handleAgentResponse = (payload, fromName) => {
   }
 
   // 2. Animate Agent
-  if (isAi) animateAgent('talk');
+  if (isAi) {
+    animateAgent('talk');
+    // 文脈から空気を読んで自動でジェスチャーを実行
+    if (payload.done && fullText) triggerAutoGesture(fullText);
+  }
 };
 
 function parseGestures(text) {
@@ -85,11 +91,51 @@ function parseGestures(text) {
   return text.replace(/\[([a-z]+)\]/gi, '');
 }
 
+/**
+ * AIの返答内容から「空気を読んで」自動的にジェスチャーを決定する
+ */
+function triggerAutoGesture(text) {
+  const normalized = text.toLowerCase();
+  let key = null;
+  
+  if (/こんにちは|ハロー|hello|hi|初めまして/.test(normalized)) key = 'wave';
+  else if (/はい|そうですね|なるほど|ok|agree|sure|了解/.test(normalized)) key = 'nod';
+  else if (/すごい|おめでとう|やった|うれしい|happy|joy|wow|amazing/.test(normalized)) key = 'joy';
+  else if (/左手|左の腕/.test(normalized)) key = 'leftHandUp';
+  else if (/右手|右の腕/.test(normalized)) key = 'rightHandUp';
+
+  if (key && GESTURES[key]) {
+    applyGesture(GESTURES[key]);
+    setTimeout(() => applyGesture(GESTURES.reset), 2000);
+  }
+}
+
 function applyGesture(g) {
   if (!threeModel) return;
-  if (g.bone) {
-    const bone = findBone(threeModel, g.bone);
-    if (bone) bone.rotation.set(...g.rot);
+  if (g.action) animateAgent(g.action);
+
+  if (g.pose === 'natural') {
+    const l = findBone(threeModel, 'LeftUpperArm');
+    const r = findBone(threeModel, 'RightUpperArm');
+    const ll = findBone(threeModel, 'LeftLowerArm');
+    const rr = findBone(threeModel, 'RightLowerArm');
+    const h = findBone(threeModel, 'Head');
+    if (l) l.rotation.set(0, 0, 1.4);   // A-ポーズ (左腕)
+    if (r) r.rotation.set(0, 0, -1.4);  // A-ポーズ (右腕)
+    if (ll) ll.rotation.set(0, 0, 0.2); // 少し内側に曲げる
+    if (rr) rr.rotation.set(0, 0, -0.2);
+    if (h) h.rotation.set(0, 0, 0);
+  } else {
+    if (g.bone) {
+      const bone = findBone(threeModel, g.bone);
+      if (bone) bone.rotation.set(...g.rot);
+    }
+    if (g.bones) {
+      g.bones.forEach(bn => {
+        const bone = findBone(threeModel, bn);
+        if (bone) bone.rotation.set(...g.rot);
+      });
+    }
   }
 }
 
@@ -106,6 +152,12 @@ function animateAgent(action) {
       threeModel.position.y += Math.sin(count) * 0.05;
       count++; if (count > 10) { clearInterval(id); threeModel.position.y = 0; }
     }, 60);
+  } else if (action === 'jump' && threeModel) {
+    let count = 0;
+    const id = setInterval(() => {
+      threeModel.position.y = Math.abs(Math.sin(count * 0.5)) * 0.2;
+      count++; if (count > 20) { clearInterval(id); threeModel.position.y = 0; }
+    }, 40);
   }
 }
 
@@ -131,6 +183,7 @@ function initThreeAgent() {
   new GLTFLoader().load(GLB_MODEL_PATH, (gltf) => {
     threeModel = gltf.scene;
     threeScene.add(threeModel);
+    applyGesture(GESTURES.reset); // ロード直後に自然なポーズを適用
     console.log('[SAGBI] 3D Model Loaded.');
     if (window.updateStatus) window.updateStatus(""); // Hide on success
   }, (xhr) => {
