@@ -22,7 +22,7 @@ import (
 var (
 	listenAddr  = envOr("LISTEN_ADDR", ":8080")
 	ollamaURL   = envOr("OLLAMA_URL", "http://localhost:11434")
-	ollamaModel = envOr("OLLAMA_MODEL", "gemma3:1b-it-q4_K_M")
+	ollamaModel = envOr("OLLAMA_MODEL", "gemma3:4b-it-q4_K_M")
 )
 
 func envOr(key, fallback string) string {
@@ -144,7 +144,7 @@ type OllamaResponse struct {
 
 // searchRAG reads text files from the rag/ directory and returns relevant snippets
 func searchRAG(query string) string {
-	ragDir := "rag"
+	ragDir := "../rag"            // プロジェクトルートのragフォルダを参照するように修正
 	_ = os.MkdirAll(ragDir, 0755) // Ensure dir exists
 	files, err := os.ReadDir(ragDir)
 	if err != nil {
@@ -269,16 +269,16 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) {
-				ragDir := "rag"
-				_ = os.MkdirAll(ragDir, 0755)
+				logDir := "history" // RAG用の知識と履歴保存先を分ける
+				_ = os.MkdirAll(logDir, 0755)
 				sessionID := time.Now().Format("20060102_150405")
-				filename := fmt.Sprintf("%s/story_%s_%s.txt", ragDir, sessionID, clientID)
+				filename := fmt.Sprintf("%s/story_%s_%s.txt", logDir, sessionID, clientID)
 
 				// ストーリーの構築
 				var story bytes.Buffer
 				story.WriteString(fmt.Sprintf("--- SESSION: %s ---\n", sessionID))
 				story.WriteString(fmt.Sprintf("[USER:%s] [TYPE:TEXT] %s\n", clientID, payload.Text))
-				
+
 				if payload.Image != "" {
 					story.WriteString(fmt.Sprintf("[USER:%s] [TYPE:IMAGE] attached\n", clientID))
 					// 画像ファイルは別途保存し、ストーリーからリンク
@@ -287,7 +287,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 						imgData = imgData[idx+1:]
 					}
 					decoded, _ := base64.StdEncoding.DecodeString(imgData)
-					imgFilename := fmt.Sprintf("%s/media_%s_%s.jpg", ragDir, sessionID, clientID)
+					imgFilename := fmt.Sprintf("%s/media_%s_%s.jpg", logDir, sessionID, clientID)
 					_ = os.WriteFile(imgFilename, decoded, 0644)
 					story.WriteString(fmt.Sprintf("[LINK:IMAGE] %s\n", imgFilename))
 				}
@@ -296,9 +296,9 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				go func(client *Client, p ChatPayload, st *bytes.Buffer, fName string) {
 					answer, err := queryOllama(p)
 					if err != nil {
-						answer = "AI接続エラー"
+						answer = fmt.Sprintf("AI接続エラー: %v (Model: %s)", err, ollamaModel)
 					}
-					
+
 					// ストーリーにAIの回答を追記
 					st.WriteString(fmt.Sprintf("[AI:Sagbi] [TYPE:TEXT] %s\n", answer))
 					st.WriteString("--- END SESSION ---\n")
@@ -315,7 +315,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					}
 				}(c, p, &story, filename)
 			}(p, c.id)
-		
+
 		case "signal":
 			// Forward signaling messages (offer/answer/candidate) to target
 			hub.broadcast(raw, c)
