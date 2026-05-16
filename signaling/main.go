@@ -280,10 +280,10 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
-			// 同期：メッセージを送信者以外の全クライアントに転送
-			msg.From = c.id
+			// 同期：メッセージを送信者を含む全クライアントに転送して画面を一致させる
+			msg.From = "User (" + c.id + ")"
 			broadcastRaw, _ := json.Marshal(msg)
-			hub.broadcast(broadcastRaw, c)
+			hub.broadcast(broadcastRaw, nil)
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) { // このgoroutineはRAGとは直接関係ないが、履歴保存ロジック

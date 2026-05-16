@@ -8,3 +8,11 @@ SAGBI (Spirit AGent Bomb Infrastructure) AGI は、ユーザーの余剰計算�
 
 【開発者へのメッセージ】
 このテキストが読み込まれていれば、RAG機能は正常に動作しています。AIに「SAGBI AGIの特徴は何ですか？」と聞いてみてください。
+
+---
+
+【Usage / 使い方】
+- Start: Run `./start_sagbi.sh` / `./start_sagbi.sh` を実行して開始。
+- Mobile: Scan terminal QR code / ターミナルのQRコードをスキャンしてスマホで参加。
+- Sync: All messages are shared across devices / 全てのメッセージはデバイス間で共有されます。
+- Privacy: Do not put sensitive info in RAG folders / RAGフォルダに個人情報を入れないでください。

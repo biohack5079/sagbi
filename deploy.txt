@@ -1,7 +1,11 @@
-git add .
-git commit -m "change"
-git push
+# SAGBI Professional Deployment Flow
+# 1. Git Sync
+git add . && \
+git commit -m "chore: update and sync SAGBI $(date +'%Y-%m-%d %H:%M:%S')" && \
+git push || echo "Git push skipped or failed"
 
+# 2. Firebase Hosting Deploy
 firebase deploy
 
+# 3. Launch Local Environment
 ./start_sagbi.sh
