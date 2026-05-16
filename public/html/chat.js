@@ -11,6 +11,8 @@ let threeScene, threeCamera, threeRenderer, threeClock, threeModel;
 
 // ストリーミング中のテキストを保持するバッファ
 const responseBuffers = new Map();
+// メッセージ要素自体を保持するMap（IDによる高速検索用）
+const responseElements = new Map();
 
 // --- Gestures (G1:M compatible) ---
 const GESTURES = {
@@ -25,31 +27,33 @@ window.handleAgentResponse = (payload) => {
   if (!payload || !payload.text) return;
   const msgId = payload.id || 'ai-fallback';
 
-  // 1. 既存のメッセージ要素があるか確認（IDで紐付け）
-  let bubble = document.getElementById(msgId);
-
   if (!responseBuffers.has(msgId)) {
     responseBuffers.set(msgId, "");
   }
+
+  // 1. 既存のメッセージ要素があるか確認
+  let bubble = responseElements.get(msgId) || document.getElementById(msgId);
 
   // バッファに新しく届いた断片を追加
   responseBuffers.set(msgId, responseBuffers.get(msgId) + payload.text);
   const fullText = responseBuffers.get(msgId);
 
   if (!bubble) {
-    // 新しいメッセージ：最初の1回だけ addMessage を呼ぶ
+    // 新しいメッセージの作成
     if (window.addMessage) {
-      const initialText = parseGestures(payload.text || '...');
-      const el = window.addMessage(initialText, false);
-      // index.html側で作成された要素にIDを付与して、次回から探せるようにする
-      if (el) el.id = msgId;
-      else {
-        // DOMに反映されるのを待つために少し遅延させてIDを付与
-        setTimeout(() => {
-          const messages = document.querySelectorAll('.message');
-          const lastMsg = messages[messages.length - 1];
-          if (lastMsg && !lastMsg.id) lastMsg.id = msgId;
-        }, 10);
+      // 断片ではなく、これまでに溜まったバッファ（fullText）で作成を開始
+      const initialDisplay = parseGestures(fullText) || '...';
+      bubble = window.addMessage(initialDisplay, false);
+      
+      // index.htmlの addMessage が要素を返さない場合のフォールバック
+      if (!bubble) {
+        const messages = document.querySelectorAll('.message');
+        bubble = messages[messages.length - 1];
+      }
+
+      if (bubble) {
+        bubble.id = msgId;
+        responseElements.set(msgId, bubble);
       }
     }
   } else {
