@@ -95,6 +95,23 @@ ollama pull "${MODEL}"
 log "Model ${MODEL} ready"
 
 # -------------------
+# 3.5 RAG Directory Configuration
+# -------------------
+echo "-------------------------------------------------------"
+echo "RAGソース参照ファイルを保存するフォルダのフルパスを入力してください。"
+echo "（未入力の場合はRAG機能がデフォルトで無効になります）"
+read -p "Path: " RAG_PATH
+
+if [ -z "$RAG_PATH" ]; then
+    log "RAG設定をスキップしました。"
+else
+    echo "警告: ここが以降の参照フォルダになります。個人情報などは保存しないで下さい。"
+    mkdir -p "signaling"
+    echo "RAG_DIR=$RAG_PATH" > signaling/.env
+    log "RAGディレクトリを $RAG_PATH に設定し、signaling/.env に保存しました。"
+fi
+
+# -------------------
 # 4. Optional: Pull extra models (example)
 # -------------------
 # EXTRA_MODELS=("phi:2.7b" "llama2:13b")

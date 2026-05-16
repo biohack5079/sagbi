@@ -29,6 +29,12 @@ fi
 
 # 1. Start Signaling Server in background
 echo "[1/3] Starting Signaling Server (Go)..."
+
+# Load environment variables from .env if it exists
+if [ -f signaling/.env ]; then
+    export $(grep -v '^#' signaling/.env | xargs)
+fi
+
 cd signaling
 go run main.go > ../signaling.log 2>&1 &
 SIGNAL_PID=$!

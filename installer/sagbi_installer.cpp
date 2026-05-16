@@ -93,7 +93,8 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
 
     // RAG設定の保存 (signaling/.env に書き出す例)
     if (selectedRagPath != L"未設定 (デフォルトを使用)") {
-        std::wofstream envFile(L".env");
+        CreateDirectoryW(L"signaling", NULL);
+        std::wofstream envFile(L"signaling/.env");
         envFile << L"RAG_DIR=" << selectedRagPath << std::endl;
         envFile.close();
     }
