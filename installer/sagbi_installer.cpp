@@ -22,9 +22,12 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <shlobj.h>
+#include <fstream>
 
 #pragma comment(lib, "urlmon.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
 
 // ── Configuration ────────────────────────────────────────────
 static const wchar_t* OLLAMA_DOWNLOAD_URL =
@@ -41,11 +44,13 @@ static const wchar_t* WINDOW_TITLE  = L"SAGBI AGI Installer";
 #define IDC_ADD_MODEL_BTN  2005
 #define IDC_MODEL_LIST     2006
 #define IDC_OPEN_HP_BTN    2007
+#define IDC_SELECT_RAG_BTN 2008
 
 // ── Globals ──────────────────────────────────────────────────
 static HWND hStatus, hProgress, hInstallBtn, hModelEdit, hAddModelBtn;
-static HWND hModelList, hOpenHpBtn;
+static HWND hModelList, hOpenHpBtn, hRagPathLabel;
 static std::vector<std::wstring> additionalModels;
+static std::wstring selectedRagPath = L"未設定 (デフォルトを使用)";
 static bool installComplete = false;
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -86,8 +91,15 @@ bool runCommand(const wchar_t* cmd, bool wait = true) {
 DWORD WINAPI installWorker(LPVOID lpParam) {
     HWND hwnd = (HWND)lpParam;
 
+    // RAG設定の保存 (signaling/.env に書き出す例)
+    if (selectedRagPath != L"未設定 (デフォルトを使用)") {
+        std::wofstream envFile(L".env");
+        envFile << L"RAG_DIR=" << selectedRagPath << std::endl;
+        envFile.close();
+    }
+
     // Step 1: Download Ollama installer
-    setStatus(L"Ollama をダウンロード中…");
+    setStatus(L"Ollama をダウンロード中...");
     setProgress(L"[1/3] Downloading OllamaSetup.exe");
 
     wchar_t tempPath[MAX_PATH];
@@ -102,7 +114,7 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
     }
 
     // Step 2: Run Ollama installer (silent)
-    setStatus(L"Ollama をインストール中…");
+    setStatus(L"Ollama をインストール中...");
     setProgress(L"[2/3] Installing Ollama");
 
     std::wstring installCmd = L"\"" + installerPath + L"\" /SILENT /NORESTART";
@@ -117,7 +129,7 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
     Sleep(3000);
 
     // Step 3: Pull default model
-    setStatus(L"デフォルトモデルを取得中…");
+    setStatus(L"デフォルトモデルを取得中...");
     std::wstring pullCmd = L"ollama pull ";
     pullCmd += DEFAULT_MODEL;
     setProgress((std::wstring(L"[3/3] ollama pull ") + DEFAULT_MODEL).c_str());
@@ -176,21 +188,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SendMessageW(hModelList, LB_ADDSTRING, 0,
             (LPARAM)(std::wstring(L"[default] ") + DEFAULT_MODEL).c_str());
 
+        // RAG Source Settings
+        CreateWindowW(L"STATIC", L"RAGソース参照フォルダ:",
+            sStyle, 20, 210, 150, 25, hwnd, NULL, NULL, NULL);
+        hRagPathLabel = CreateWindowW(L"STATIC", selectedRagPath.c_str(),
+            sStyle | SS_ENDELLIPSIS, 170, 210, 200, 25, hwnd, NULL, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"参照...",
+            sStyle, 380, 207, 80, 25, hwnd, (HMENU)IDC_SELECT_RAG_BTN, NULL, NULL);
+
         // Status
         hStatus = CreateWindowW(L"STATIC", L"準備完了",
-            sStyle, 20, 210, 440, 25, hwnd, (HMENU)IDC_STATUS_LABEL, NULL, NULL);
+            sStyle, 20, 240, 440, 25, hwnd, (HMENU)IDC_STATUS_LABEL, NULL, NULL);
         hProgress = CreateWindowW(L"STATIC", L"",
-            sStyle, 20, 235, 440, 25, hwnd, (HMENU)IDC_PROGRESS_LABEL, NULL, NULL);
+            sStyle, 20, 260, 440, 25, hwnd, (HMENU)IDC_PROGRESS_LABEL, NULL, NULL);
 
         // Buttons
         hInstallBtn = CreateWindowW(L"BUTTON", L"📥 インストール開始",
-            sStyle | BS_DEFPUSHBUTTON, 20, 270, 200, 35,
+            sStyle | BS_DEFPUSHBUTTON, 20, 300, 200, 35,
             hwnd, (HMENU)IDC_INSTALL_BTN, NULL, NULL);
         hOpenHpBtn = CreateWindowW(L"BUTTON", L"🌐 SAGBI AGI を開く",
-            sStyle, 240, 270, 200, 35,
+            sStyle, 240, 300, 200, 35,
             hwnd, (HMENU)IDC_OPEN_HP_BTN, NULL, NULL);
         EnableWindow(hOpenHpBtn, FALSE);
 
+        CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
         break;
     }
 
@@ -208,6 +229,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
+        case IDC_SELECT_RAG_BTN: {
+            BROWSEINFOW bi = { 0 };
+            bi.lpszTitle = L"RAGソース参照ファイルを保存するフォルダを選択してください";
+            bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+            bi.hwndOwner = hwnd;
+            LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+            if (pidl != 0) {
+                wchar_t path[MAX_PATH];
+                if (SHGetPathFromIDListW(pidl, path)) {
+                    selectedRagPath = path;
+                    SetWindowTextW(hRagPathLabel, path);
+                    
+                    // ユーザーへの警告
+                    MessageBoxW(hwnd, 
+                        L"ここが以降の参照フォルダになります。\n個人情報などは保存しないで下さい。", 
+                        L"RAG設定の警告", MB_OK | MB_ICONWARNING);
+                }
+                CoTaskMemFree(pidl);
+            }
+            break;
+        }
         case IDC_INSTALL_BTN:
             EnableWindow(hInstallBtn, FALSE);
             CreateThread(NULL, 0, installWorker, hwnd, 0, NULL);
@@ -219,6 +261,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         break;
 
     case WM_DESTROY:
+        CoUninitialize();
         PostQuitMessage(0);
         break;
 

@@ -23,6 +23,8 @@ var (
 	listenAddr  = envOr("LISTEN_ADDR", ":8080")
 	ollamaURL   = envOr("OLLAMA_URL", "http://localhost:11434")
 	ollamaModel = envOr("OLLAMA_MODEL", "gemma3:4b-it-q4_K_M")
+	// RAG_DIR 環境変数を参照。設定されていなければRAG機能はデフォルトで無効。
+	ragSourceDir = envOr("RAG_DIR", "")
 )
 
 func envOr(key, fallback string) string {
@@ -143,18 +145,23 @@ type OllamaResponse struct {
 }
 
 // searchRAG reads text files from the rag/ directory and returns relevant snippets
+// RAG_DIR 環境変数が設定されていればそのディレクトリを参照する
 func searchRAG(query string) string {
-	ragDir := "../rag"            // プロジェクトルートのragフォルダを参照するように修正
-	_ = os.MkdirAll(ragDir, 0755) // Ensure dir exists
-	files, err := os.ReadDir(ragDir)
+	// ragSourceDir が設定されていなければ、RAG機能は無効
+	if ragSourceDir == "" {
+		return ""
+	}
+
+	files, err := os.ReadDir(ragSourceDir)
 	if err != nil {
+		log.Printf("Warning: Could not read RAG directory '%s'. Please ensure it exists and has correct permissions: %v", ragSourceDir, err)
 		return ""
 	}
 
 	var context bytes.Buffer
 	for _, file := range files {
-		if !file.IsDir() && (len(file.Name()) > 4 && file.Name()[len(file.Name())-4:] == ".txt") {
-			content, err := os.ReadFile(ragDir + "/" + file.Name())
+		if !file.IsDir() && (len(file.Name()) > 4 && file.Name()[len(file.Name())-4:] == ".txt") { // .txt ファイルのみを対象
+			content, err := os.ReadFile(ragSourceDir + string(os.PathSeparator) + file.Name()) // クロスプラットフォーム対応
 			if err == nil {
 				context.WriteString(string(content) + "\n---\n")
 			}
@@ -274,7 +281,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
-			go func(payload ChatPayload, clientID string) {
+			go func(payload ChatPayload, clientID string) { // このgoroutineはRAGとは直接関係ないが、履歴保存ロジック
 				logDir := "history" // RAG用の知識と履歴保存先を分ける
 				_ = os.MkdirAll(logDir, 0755)
 				sessionID := time.Now().Format("20060102_150405")
@@ -359,6 +366,11 @@ func main() {
 	log.Printf("🚀 SAGBI Signaling Server starting on %s", listenAddr)
 	log.Printf("   Ollama endpoint: %s (model: %s)", ollamaURL, ollamaModel)
 
+	if ragSourceDir != "" {
+		log.Printf("   RAG Source Directory: %s", ragSourceDir)
+	} else {
+		log.Printf("   RAG Source Directory: Not configured (RAG functionality disabled by default).")
+	}
 	srv := &http.Server{
 		Addr:    listenAddr,
 		Handler: mux,
