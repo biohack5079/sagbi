@@ -280,9 +280,12 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
-			// 同期：メッセージを送信者を含む全クライアントに転送して画面を一致させる
-			msg.From = "User (" + c.id + ")"
-			broadcastRaw, _ := json.Marshal(msg)
+			// 質問の同期：ユーザーの質問を chat_response 型として全員に送ることで、
+			// フロントエンドの表示ロジックを共通化し、全デバイスで質問を表示させる。
+			syncMsg := WSMessage{Type: "chat_response", From: "User (" + c.id + ")"}
+			syncPayload, _ := json.Marshal(p)
+			syncMsg.Payload = syncPayload
+			broadcastRaw, _ := json.Marshal(syncMsg)
 			hub.broadcast(broadcastRaw, nil)
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──

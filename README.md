@@ -1,17 +1,15 @@
 # SAGBI AGI — Distributed Local AI Agent Platform
 
-> **Spirit Bomb Computing (元気玉コンピューティング)**: Connect everyone's PCs to power a massive, decentralised AI agent. / みんなのPCを繋いで、巨大な分散型AIエージェントを動かそう。
+> **Spirit Bomb Computing**: Connect everyone's PCs to power a massive, decentralised AI agent.
 
-SAGBI AGI is a distributed artificial general intelligence platform that turns ordinary consumer hardware into a collaborative supercomputer. Each participant installs a lightweight agent that shares spare CPU, memory, and GPU resources across a peer-to-peer mesh. When someone asks a complex question, the system automatically distributes inference workloads across the network — like a digital *Genki-dama*.
-
-SAGBI AGIは、一般的なコンシューマーハードウェアを協調的なスーパーコンピュータに変える分散型汎用人工知能プラットフォームです。各参加者が軽量なエージェントをインストールすることで、P2Pメッシュを通じて余剰のCPU、メモリ、GPUリソースを共有します。誰かが複雑な質問をすると、システムは推論ワークロードをネットワーク全体に自動的に分散させます。それはまるで、デジタルの「元気玉」のような仕組みです。
+SAGBI AGI is a distributed artificial general intelligence platform that turns ordinary consumer hardware into a collaborative supercomputer. Each participant installs a lightweight agent that shares spare CPU, memory, and GPU resources across a peer-to-peer mesh. When someone asks a complex question, the system automatically distributes inference workloads across the network — like a digital *Genki-dama* (元気玉).
 
 ---
 
 ## 🚀 Quick Start / クイックスタート
 
 ### English
-1. **Run Installer**: Execute the installer for your OS in the `installer/` directory to set up Ollama.
+1. **Run Installer**: Use the installer in `installer/` for your OS to set up Ollama.
 2. **Start Server**: Run `./start_sagbi.sh` in your terminal.
 3. **Browser Access**: A browser will open automatically with the AI chat interface.
 
@@ -21,9 +19,9 @@ SAGBI AGIは、一般的なコンシューマーハードウェアを協調的�
 3. **ブラウザアクセス**: 自動的にブラウザが開き、AIチャット画面が表示されます。
 
 ### 📱 Mobile Sharing / スマホとの共有
-Scan the **QR code** displayed in the terminal with your smartphone camera. You can converse with the AI running on your home PC from anywhere via Cloudflare Tunnel. Conversations are **synced in real-time** across all connected devices.
+Scan the **QR code** in the terminal with your phone. Access your PC's AI from anywhere via Cloudflare Tunnel. **All questions and answers are synced in real-time** across all connected devices.
 
-起動時にターミナルに表示される **QRコード** をスマホのスキャンしてください。Cloudflare Tunnelを通じて、外出先のスマホからでも自宅のPCで動くAIと会話できます。会話の内容は、接続しているすべてのデバイスで **リアルタイムに同期** されます。
+起動時に表示される **QRコード** をスマホでスキャンしてください。Cloudflare Tunnel経由で、どこからでもPCのAIを利用できます。**質問と回答の両方が、全デバイスでリアルタイムに同期**されます。
 
 ---
 

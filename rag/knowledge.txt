@@ -12,7 +12,11 @@ SAGBI (Spirit AGent Bomb Infrastructure) AGI は、ユーザーの余剰計算�
 ---
 
 【Usage / 使い方】
-- Start: Run `./start_sagbi.sh` / `./start_sagbi.sh` を実行して開始。
-- Mobile: Scan terminal QR code / ターミナルのQRコードをスキャンしてスマホで参加。
-- Sync: All messages are shared across devices / 全てのメッセージはデバイス間で共有されます。
-- Privacy: Do not put sensitive info in RAG folders / RAGフォルダに個人情報を入れないでください。
+1. 起動 / Start:
+   ./start_sagbi.sh を実行。
+2. 共有 / Sharing:
+   QRコードをスキャンしてスマホで参加。外出先から自宅PCのAIを操作可能。
+3. 同期 / Sync:
+   「Spirit Bomb Computing」により、誰かの質問とAIの回答は、接続中の全スマホ・PCでリアルタイムに共有・同期されます。
+4. 注意 / Privacy:
+   RAGフォルダ内はAIが読み取ります。個人情報は入れないでください。

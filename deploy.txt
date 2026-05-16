@@ -1,8 +1,8 @@
 # SAGBI Professional Deployment Flow
 # 1. Git Sync
 git add . && \
-git commit -m "chore: update and sync SAGBI $(date +'%Y-%m-%d %H:%M:%S')" && \
-git push || echo "Git push skipped or failed"
+git commit -m "feat: enable full message synchronization $(date +'%Y-%m-%d %H:%M:%S')" && \
+git push -u origin main || echo "Git push failed"
 
 # 2. Firebase Hosting Deploy
 firebase deploy
