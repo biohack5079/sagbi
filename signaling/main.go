@@ -19,6 +19,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// RAGキャッシュ用
+var (
+	ragCache     string
+	lastRagCheck time.Time
+	ragMu        sync.RWMutex
+)
+
 // ── Configuration ────────────────────────────────────────────
 var (
 	listenAddr  = envOr("LISTEN_ADDR", ":8080")
@@ -117,6 +124,7 @@ func (h *Hub) broadcast(msg []byte, exclude *Client) {
 		select {
 		case c.send <- msg:
 		default:
+			log.Printf("[Hub] Warning: Dropping message for slow client %s", c.id)
 			// drop slow client
 		}
 	}
@@ -133,7 +141,8 @@ type ChatPayload struct {
 	Text  string `json:"text"`
 	Image string `json:"image,omitempty"` // Base64 image
 	Lang  string `json:"lang,omitempty"`
-	ID    string `json:"id,omitempty"` // メッセージの同一性を識別するためのID
+	Done  bool   `json:"done,omitempty"` // 生成完了フラグ
+	ID    string `json:"id,omitempty"`   // メッセージの同一性を識別するためのID
 }
 
 // ── Ollama integration ───────────────────────────────────────
@@ -156,6 +165,16 @@ func searchRAG(query string) string {
 		return ""
 	}
 
+	ragMu.RLock()
+	if time.Since(lastRagCheck) < 10*time.Second && ragCache != "" {
+		defer ragMu.RUnlock()
+		return ragCache
+	}
+	ragMu.RUnlock()
+
+	ragMu.Lock()
+	defer ragMu.Unlock()
+
 	files, err := os.ReadDir(ragSourceDir)
 	if err != nil {
 		log.Printf("Warning: Could not read RAG directory '%s'. Please ensure it exists and has correct permissions: %v", ragSourceDir, err)
@@ -172,18 +191,21 @@ func searchRAG(query string) string {
 			}
 		}
 	}
+	ragCache = context.String()
+	lastRagCheck = time.Now()
 	return context.String()
 }
 
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
-	// プロンプトを構造化し、自然な日本語での回答を促す
-	prompt := "System: You are SAGBI AI. Answer in helpful, natural Japanese. Do not repeat the user's greeting.\nUser: " + payload.Text
+	// プロンプトをさらに厳格化し、挨拶などの重複を避ける指示を追加
+	prompt := "System: You are SAGBI AI. Answer directly in natural Japanese. " +
+		"Do NOT include user's message in your response. Just answer the request.\nUser: " + payload.Text
 
 	// Inject RAG context if available
 	context := searchRAG(payload.Text) // TODO: Optimize RAG to not read files every time
 	if context != "" {
-		prompt = "Context:\n" + context + "\n\nAnswer the user's question based on the context.\nUser: " + payload.Text
+		prompt = "Context:\n" + context + "\n\nInstructions: Based on context, answer user's request. Answer in Japanese.\nUser: " + payload.Text
 	}
 
 	ollamaReq := OllamaRequest{
@@ -218,6 +240,7 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 
 	// Decode streaming JSON from Ollama
 	decoder := json.NewDecoder(resp.Body)
+	var chunkBuffer bytes.Buffer
 	for {
 		var chunk struct {
 			Response string `json:"response"`
@@ -231,9 +254,14 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 		}
 
 		if chunk.Response != "" {
-			onChunk(chunk.Response)
+			chunkBuffer.WriteString(chunk.Response)
+			onChunk(chunkBuffer.String())
+			chunkBuffer.Reset()
 		}
 		if chunk.Done {
+			if chunkBuffer.Len() > 0 {
+				onChunk(chunkBuffer.String())
+			}
 			break
 		}
 	}
@@ -274,8 +302,8 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
-		// Reset deadline on message
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		// メッセージ受信時も、長めのタイムアウトを維持（スマホの不安定な通信に対応）
+		conn.SetReadDeadline(time.Now().Add(3000 * time.Second))
 
 		var msg WSMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {
@@ -357,7 +385,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				err := queryOllama(payload, func(chunk string) {
 					fullAnswer.WriteString(chunk)
 					// 逐次ブロードキャスト
-					respMsg.Payload, _ = json.Marshal(ChatPayload{Text: chunk, ID: aiResponseID})
+					respMsg.Payload, _ = json.Marshal(ChatPayload{
+						Text: chunk,
+						ID:   aiResponseID,
+						Done: false,
+					})
 					respBytes, _ := json.Marshal(respMsg)
 					hub.broadcast(respBytes, nil)
 				})
@@ -366,9 +398,18 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					log.Printf("[Error] Ollama: %v", err)
 					errMsg := fmt.Sprintf("AI接続エラー: %v", err)
 					fullAnswer.WriteString(errMsg)
-					respMsg.Payload, _ = json.Marshal(ChatPayload{Text: errMsg})
+					respMsg.Payload, _ = json.Marshal(ChatPayload{Text: errMsg, ID: aiResponseID})
 					respBytes, _ := json.Marshal(respMsg)
 					hub.broadcast(respBytes, nil)
+				} else {
+					// 完了通知を送信
+					respMsg.Payload, _ = json.Marshal(ChatPayload{
+						Text: "",
+						ID:   aiResponseID,
+						Done: true,
+					})
+					finalBytes, _ := json.Marshal(respMsg)
+					hub.broadcast(finalBytes, nil)
 				}
 
 				// 回答完了後に履歴を書き出し

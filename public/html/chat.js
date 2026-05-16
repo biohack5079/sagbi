@@ -13,6 +13,8 @@ let threeScene, threeCamera, threeRenderer, threeClock, threeModel;
 const responseBuffers = new Map();
 // メッセージ要素自体を保持するMap（IDによる高速検索用）
 const responseElements = new Map();
+// 作成中のメッセージIDを追跡
+const pendingMessages = new Set();
 
 // --- Gestures (G1:M compatible) ---
 const GESTURES = {
@@ -24,43 +26,50 @@ const GESTURES = {
 
 // --- Agent Response Handler (Exposed to index.html) ---
 window.handleAgentResponse = (payload) => {
-  if (!payload || !payload.text) return;
+  if (!payload) return;
   const msgId = payload.id || 'ai-fallback';
 
-  if (!responseBuffers.has(msgId)) {
-    responseBuffers.set(msgId, "");
+  // 完了フラグの処理
+  if (payload.done) {
+    responseBuffers.delete(msgId);
+    responseElements.delete(msgId);
+    return;
   }
 
-  // 1. 既存のメッセージ要素があるか確認
-  let bubble = responseElements.get(msgId) || document.getElementById(msgId);
+  if (!payload.text) return;
 
-  // バッファに新しく届いた断片を追加
+  // バッファの初期化と更新
+  const isFirstChunk = !responseBuffers.has(msgId);
+  if (isFirstChunk) {
+    responseBuffers.set(msgId, "");
+  }
   responseBuffers.set(msgId, responseBuffers.get(msgId) + payload.text);
   const fullText = responseBuffers.get(msgId);
 
-  if (!bubble) {
-    // 新しいメッセージの作成
+  // 1. 既存の吹き出しを探す
+  let bubble = responseElements.get(msgId) || document.getElementById(msgId);
+
+  if (!bubble && !pendingMessages.has(msgId)) {
+    pendingMessages.add(msgId);
     if (window.addMessage) {
-      // 断片ではなく、これまでに溜まったバッファ（fullText）で作成を開始
-      const initialDisplay = parseGestures(fullText) || '...';
-      bubble = window.addMessage(initialDisplay, false);
-      
-      // index.htmlの addMessage が要素を返さない場合のフォールバック
-      if (!bubble) {
-        const messages = document.querySelectorAll('.message');
-        bubble = messages[messages.length - 1];
-      }
+      const initialDisplay = parseGestures(fullText);
+      const newEl = window.addMessage(initialDisplay || '...', false);
+
+      // 要素の特定を強化
+      bubble = newEl || document.querySelector('.message:last-child');
 
       if (bubble) {
-        bubble.id = msgId;
+        bubble.setAttribute('id', msgId);
         responseElements.set(msgId, bubble);
       }
     }
-  } else {
-    // 既存のメッセージ：テキストのみを更新
-    // parseGesturesは全文に対して実行して、タグを処理しつつテキストを表示
-    const contentSpan = bubble.querySelector('.text') || bubble;
-    contentSpan.textContent = parseGestures(fullText);
+    pendingMessages.delete(msgId);
+  }
+
+  if (bubble) {
+    // 既存の吹き出しのテキストのみを書き換える（parseGesturesでタグを除去して全文表示）
+    const textContainer = bubble.querySelector('.text-content') || bubble.querySelector('.text') || bubble.querySelector('p') || bubble;
+    textContainer.innerText = parseGestures(fullText);
   }
 
   // 2. Animate Agent
@@ -76,7 +85,8 @@ function parseGestures(text) {
       setTimeout(() => applyGesture(GESTURES.reset), 2000);
     });
   }
-  return text.replace(/\[([a-z]+)\]/gi, '').trim();
+  // ストリーミング表示のために trim() を削除（末尾のスペースを維持）
+  return text.replace(/\[([a-z]+)\]/gi, '');
 }
 
 function applyGesture(g) {
