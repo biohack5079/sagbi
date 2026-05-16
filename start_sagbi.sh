@@ -76,11 +76,23 @@ fi
 # Convert https to wss for signaling
 SIGNAL_WSS_URL="${CLOUDFLARE_URL/https/wss}/ws/chat"
 
+echo "[3/3] Updating Global Config..."
+# config.json を作成して Firebase 上の全ユーザーが参照できるようにする
+cat <<EOF > public/html/config.json
+{
+  "signaling_url": "$SIGNAL_WSS_URL",
+  "updated_at": "$(date)"
+}
+EOF
+
+echo "Deploying updated config to Firebase..."
+firebase deploy --only hosting
+
 echo -e "\n[3/3] Tunnel Ready: $CLOUDFLARE_URL"
-echo "Opening Production HP with auto-connect..."
+echo "Opening Global SAGBI URL..."
 
 # 3. Open Browser
-FINAL_URL="https://sagbuntu.web.app/?s=$SIGNAL_WSS_URL&app=1"
+FINAL_URL="https://sagbuntu.web.app/"
 echo "Target URL: $FINAL_URL"
 
 if command -v xdg-open > /dev/null; then

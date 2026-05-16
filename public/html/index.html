@@ -551,14 +551,22 @@
     const chatInput = document.getElementById('chat-input');
     const chatSendBtn = document.getElementById('chat-send-btn');
 
-    function connectWS() {
+    async function connectWS() {
       const urlParams = new URLSearchParams(window.location.search);
       
-      // ★ここに Cloudflare のトンネルURLを入力してください
-      // 例: "wss://xxxx-xxxx-xxxx.trycloudflare.com/ws/chat"
-      const MY_HOME_SERVER_URL = ""; 
+      let SIGNALING_URL = urlParams.get('s');
 
-      let SIGNALING_URL = urlParams.get('s') || MY_HOME_SERVER_URL;
+      // URLパラメータがない場合、config.jsonから取得を試みる
+      if (!SIGNALING_URL) {
+        try {
+          const response = await fetch('config.json?t=' + Date.now()); // キャッシュ回避
+          const config = await response.json();
+          SIGNALING_URL = config.signaling_url;
+          terminalLog("Global config loaded: " + SIGNALING_URL);
+        } catch (e) {
+          console.log("Config file not found or invalid.");
+        }
+      }
 
       if (!SIGNALING_URL) {
           SIGNALING_URL = window.location.protocol === 'https:' ? `wss://localhost:8080/ws/chat` : `ws://localhost:8080/ws/chat`;
