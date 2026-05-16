@@ -5,6 +5,21 @@
 
 echo "--- SAGBI AGI Launcher ---"
 
+# 0. Check for Ollama
+if ! command -v ollama &> /dev/null; then
+    echo "[Error] Ollama is not installed."
+    echo "Please run: curl -fsSL https://ollama.com/install.sh | sh"
+    exit 1
+fi
+
+# Check if the model exists, if not, try to pull it
+MODEL="gemma3:4b-it-q4_K_M"
+if ! ollama list | grep -q "$MODEL"; then
+    echo "Model $MODEL not found. Pulling now (this may take a while)..."
+    ollama pull "$MODEL"
+fi
+
+
 # 1. Start Signaling Server in background
 echo "[1/3] Starting Signaling Server (Go)..."
 cd signaling
