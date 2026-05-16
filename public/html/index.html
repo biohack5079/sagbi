@@ -590,13 +590,12 @@
             myClientId = JSON.parse(msg.payload).id;
             terminalLog("My Client ID: " + myClientId);
           } else if (isChat) {
-            // 送信元のIDを括弧内から抽出して比較し、自身のメッセージの重複表示を防ぐ
-            const fromIdMatch = msg.from ? msg.from.match(/\(([^)]+)\)/) : null;
-            const fromId = fromIdMatch ? fromIdMatch[1] : "";
+            // 送信元ID (User (client-xxx)) から client-xxx をより確実に抽出
+            const fromId = msg.from ? msg.from.split('(')[1]?.split(')')[0] : "";
             const isMe = myClientId && (fromId === myClientId || msg.from.includes(myClientId));
             const isAi = msg.from === "SAGBI AI";
 
-            // 1. 自分が送信したメッセージの「サーバーからのエコー」は無視する（既にローカルで描画済みの為）
+            // 1. 自分が送信したメッセージの「サーバーからのエコー」は無視する
             // 2. AIの返信、または他人のメッセージ（スマホ等）のみを描画する
             if (window.handleAgentResponse && (isAi || !isMe)) {
               window.handleAgentResponse(msg.payload, msg.from);

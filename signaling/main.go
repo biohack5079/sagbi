@@ -200,11 +200,11 @@ func searchRAG(query string) string {
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	// OllamaのChat APIを利用し、システムロールでアイデンティティを強力に固定する
-	systemInstructions := "Your name is SAGBI AI. You MUST follow these rules:\n" +
-		"1. Your name SAGBI stands for 'Secure And General Believable Intelligence' ONLY.\n" +
-		"2. The project is based on 'Spirit Bomb Computing' (Spirit AGent Bomb Infrastructure).\n" +
-		"3. If asked about your origin, strictly answer it is 'Secure And General Believable Intelligence'.\n" +
-		"4. Answer directly in natural Japanese without reflecting the user's instructions back."
+	systemInstructions := "Your name is SAGBI AI. You MUST follow these strict identity rules:\n" +
+		"1. SAGBI stands for 'Secure And General Believable Intelligence'. NOTHING ELSE.\n" +
+		"2. NEVER say it is related to 'SABIAN', 'Sustainable Agriculture', or other inventions. Those are FALSE.\n" +
+		"3. The project is based on 'Spirit Bomb Computing' (Spirit AGent Bomb Infrastructure).\n" +
+		"4. Answer in natural Japanese. If asked about your name, explain it clearly as 'Secure And General Believable Intelligence'."
 
 	messages := []OllamaChatMessage{
 		{Role: "system", Content: systemInstructions},
@@ -212,10 +212,8 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 
 	context := searchRAG(payload.Text)
 	if context != "" {
-		messages = append(messages, OllamaChatMessage{
-			Role:    "system",
-			Content: "Reference from local knowledge:\n" + context,
-		})
+		// システムプロンプトを統合して優先順位を維持
+		messages[0].Content += "\n\nReference from local knowledge:\n" + context
 	}
 
 	userMsg := OllamaChatMessage{
