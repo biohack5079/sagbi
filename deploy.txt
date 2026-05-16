@@ -1,11 +1,10 @@
-# SAGBI Professional Deployment Flow
-# 1. Git Sync
+
 git add . && \
-git commit -m "feat: enable full message synchronization $(date +'%Y-%m-%d %H:%M:%S')" && \
+git commit -m "feat: change $(date +'%Y-%m-%d %H:%M:%S')" && \
 git push -u origin main || echo "Git push failed"
 
-# 2. Firebase Hosting Deploy
+
 firebase deploy
 
-# 3. Launch Local Environment
+
 ./start_sagbi.sh
