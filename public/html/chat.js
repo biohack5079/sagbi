@@ -40,7 +40,7 @@ window.handleAgentResponse = (payload, fromName) => {
       // AIなら左側（false）、ユーザーなら右側（true）
       const isUser = msgId && msgId.startsWith('user-');
       const senderName = fromName || (isUser ? 'You' : 'Sagbi');
-      const newEl = window.addMessage(parseGestures(fullText) || '...', isUser, senderName);
+      const newEl = window.addMessage(parseGestures(fullText) || '...', isUser, senderName, payload.image);
 
       if (newEl) {
         newEl.id = msgId;

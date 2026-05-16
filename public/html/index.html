@@ -604,16 +604,17 @@
       };
     }
 
-    function addMessage(text, isUser, fromName) {
+    window.addMessage = (text, isUser, fromName, image) => {
       const div = document.createElement('div');
       div.className = `chat-bubble ${isUser ? 'user' : 'bot'}`;
-      if (!isUser) lastAiBubble = div; // AIのバブルを記憶
 
-      if (isUser && currentImageBase64) {
+      if (image) {
         const img = document.createElement('img');
-        img.src = currentImageBase64;
+        // Base64ヘッダーがない場合は付与する
+        img.src = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
         div.appendChild(img);
       }
+
       const nameLabel = document.createElement('div');
       nameLabel.style.fontSize = '10px';
       nameLabel.style.opacity = '0.6';
@@ -627,19 +628,26 @@
       chatMessages.appendChild(div);
       chatMessages.scrollTop = chatMessages.scrollHeight;
       return div;
-    }
+    };
 
     function sendMessage() {
       const text = chatInput.value.trim();
       if (!text && !currentImageBase64) return;
       
       const tempId = "user-" + Date.now();
-      // ローカルで即座に表示（IDを付与）
-      const bubble = addMessage(text, true);
-      bubble.id = tempId;
+      let imgData = currentImageBase64 ? currentImageBase64.split(',')[1] : null;
+
+      // ローカルで即座に表示（handleAgentResponse を経由させることで ID 管理を chat.js に一任する）
+      if (window.handleAgentResponse) {
+        window.handleAgentResponse({
+          id: tempId,
+          text: text,
+          image: currentImageBase64, // プレビュー用にフルデータを使用
+          lang: lang
+        }, "You");
+      }
 
       if (window.sagbiWS && window.sagbiWS.readyState === 1) {
-        let imgData = currentImageBase64 ? currentImageBase64.split(',')[1] : null;
         window.sagbiWS.send(JSON.stringify({
           type: 'chat_message',
           payload: { text, image: imgData, lang, id: tempId }
