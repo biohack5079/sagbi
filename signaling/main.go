@@ -189,7 +189,13 @@ func queryOllama(payload ChatPayload) (string, error) {
 
 	reqBody, _ := json.Marshal(ollamaReq)
 
-	client := &http.Client{Timeout: 3000 * time.Second}
+	// Ollamaのロードが極端に遅い場合に対応するため、トランスポートレベルでタイムアウトを制御
+	client := &http.Client{
+		Timeout: 3000 * time.Second,
+		Transport: &http.Transport{
+			ResponseHeaderTimeout: 3000 * time.Second,
+		},
+	}
 	resp, err := client.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return "", fmt.Errorf("ollama request failed: %w", err)
@@ -222,10 +228,10 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	defer hub.unregister(c)
 
 	// Keep connection alive with Pong handler
-	conn.SetReadLimit(10 * 1024 * 1024) // 10MB limit for base64 images
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetReadLimit(10 * 1024 * 1024)                      // 10MB limit for base64 images
+	conn.SetReadDeadline(time.Now().Add(3000 * time.Second)) // 5分まで許容
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(3000 * time.Second))
 		return nil
 	})
 

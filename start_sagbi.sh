@@ -32,6 +32,13 @@ echo "[1/3] Starting Signaling Server (Go)..."
 cd signaling
 go run main.go > ../signaling.log 2>&1 &
 SIGNAL_PID=$!
+
+# サーバーが立ち上がるまで待機
+echo "Waiting for signaling server to listen on :8080..."
+until curl -s http://localhost:8080/healthz > /dev/null; do
+    sleep 1
+    echo -n "."
+done
 cd ..
 
 # 2. Start Cloudflare Tunnel and catch the URL
