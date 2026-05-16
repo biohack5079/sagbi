@@ -1,5 +1,7 @@
 git add .
 git commit -m "change"
 git push
+
 firebase deploy
+
 ./start_sagbi.sh
