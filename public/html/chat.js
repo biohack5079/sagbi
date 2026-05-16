@@ -9,6 +9,7 @@ const GLB_MODEL_PATH = `./agent.glb?v=${Date.now()}`;
 const agentCanvas = document.getElementById('agent-canvas');
 
 let threeScene, threeCamera, threeRenderer, threeClock, threeModel, controls;
+let isAiTalking = false; 
 
 // ストリーミング中のテキストを保持するバッファ
 const responseBuffers = new Map();
@@ -29,6 +30,9 @@ const GESTURES = {
   dance: { action: 'dance' },
   shake_head: { action: 'shake_head' },
   bow: { bone: 'Head', rot: [0.6, 0, 0] },
+  shrug: { action: 'shrug' },
+  surprised: { action: 'surprised' },
+  shy: { action: 'shy' },
   thinking: { bone: 'Head', rot: [0.2, 0.4, 0.2] },
   tilt_head: { bone: 'Head', rot: [0, 0, 0.3] },
   leftHandUp: { bones: ['LeftUpperArm'], rot: [0, 0, -1.4] },
@@ -90,9 +94,13 @@ window.handleAgentResponse = (payload, fromName) => {
 
   // 2. Animate Agent
   if (isAi) {
-    animateAgent('talk');
-    // 文脈から空気を読んで自動でジェスチャーを実行
-    if (payload.done && fullText) triggerAutoGesture(fullText);
+    // 喋っている間はリップシンクをONにする
+    isAiTalking = !payload.done;
+
+    if (payload.done) {
+      animateAgent('talk');
+      if (fullText) triggerAutoGesture(fullText);
+    }
   }
 };
 
@@ -159,8 +167,8 @@ function applyGesture(g) {
     const ll = findBone(threeModel, 'LeftLowerArm');
     const rr = findBone(threeModel, 'RightLowerArm');
     const h = findBone(threeModel, 'Head');
-    if (l) l.rotation.set(0, 0, 1.4);   // A-ポーズ (左腕)
-    if (r) r.rotation.set(0, 0, -1.4);  // A-ポーズ (右腕)
+    if (l) l.rotation.set(0, 0, -1.3);  // 左腕を下げる（負のZ回転）
+    if (r) r.rotation.set(0, 0, 1.3);   // 右腕を下げる（正のZ回転）
     if (ll) ll.rotation.set(0, 0, 0.2); // 少し内側に曲げる
     if (rr) rr.rotation.set(0, 0, -0.2);
     if (h) h.rotation.set(0, 0, 0);
@@ -185,12 +193,14 @@ function findBone(root, name) {
   const target = name.toLowerCase();
   let result = null;
   root.traverse(n => {
-    if (n.isBone) {
-      const boneName = n.name.toLowerCase();
-      // 大文字小文字を区別せず、ボーン名が含まれているかチェック
-      if (boneName.includes(target)) {
-        result = n;
-      }
+    const boneName = n.name.toLowerCase();
+    // 命名規則の差異（mixamorig_ 等）を考慮して柔軟にマッチング
+    const isMatch = boneName.includes(target) || 
+                    (target.includes('left') && (boneName.includes('_l_') || boneName.includes('left')) && (boneName.includes('arm') || boneName.includes('shoulder'))) ||
+                    (target.includes('right') && (boneName.includes('_r_') || boneName.includes('right')) && (boneName.includes('arm') || boneName.includes('shoulder')));
+    
+    if (isMatch && !result) {
+      result = n;
     }
   });
 
@@ -216,8 +226,8 @@ function animateAgent(action) {
   } else if (action === 'dance' && threeModel) {
     let count = 0;
     const id = setInterval(() => {
-      threeModel.position.y = Math.abs(Math.sin(count * 0.5)) * 0.2;
-      threeModel.rotation.y = Math.sin(count * 0.3) * 0.5;
+      threeModel.position.y = Math.abs(Math.sin(count * 0.6)) * 0.3; // もっと跳ねる
+      threeModel.rotation.y = Math.sin(count * 0.4) * 0.8;          // もっとひねる
       count++; if (count > 40) { clearInterval(id); threeModel.position.y = 0; threeModel.rotation.y = 0; }
     }, 40);
   } else if (action === 'shake_head' && threeModel) {
@@ -226,11 +236,40 @@ function animateAgent(action) {
     let count = 0;
     const id = setInterval(() => {
       // 頭を左右に振る（Y軸）
-      head.rotation.y = Math.sin(count * 0.8) * 0.4;
+      head.rotation.y = Math.sin(count * 1.2) * 0.7; // 速く、大きく
       // 少し縦にも揺らすと自然
-      head.rotation.x = Math.abs(Math.sin(count * 0.4)) * 0.2;
-      count++; if (count > 30) { clearInterval(id); head.rotation.y = 0; head.rotation.x = 0; }
+      head.rotation.x = Math.abs(Math.sin(count * 0.6)) * 0.3;
+      count++; if (count > 40) { clearInterval(id); head.rotation.y = 0; head.rotation.x = 0; }
     }, 40);
+  } else if (action === 'shrug' && threeModel) {
+    const l = findBone(threeModel, 'LeftUpperArm');
+    const r = findBone(threeModel, 'RightUpperArm');
+    const h = findBone(threeModel, 'Head');
+    if (l) l.rotation.set(0, 0, -0.8);
+    if (r) r.rotation.set(0, 0, 0.8);
+    if (h) h.rotation.set(0, 0, 0.2);
+    setTimeout(() => applyGesture(GESTURES.reset), 1500);
+  } else if (action === 'surprised' && threeModel) {
+    threeModel.position.z = -0.5; // のけぞる
+    const h = findBone(threeModel, 'Head');
+    if (h) h.rotation.x = -0.4;
+    setTimeout(() => {
+      threeModel.position.z = 0;
+      applyGesture(GESTURES.reset);
+    }, 1000);
+  } else if (action === 'shy' && threeModel) {
+    const h = findBone(threeModel, 'Head');
+    const r = findBone(threeModel, 'RightUpperArm');
+    if (h) h.rotation.set(0.2, 0.4, 0.2); // 斜め下を向く
+    if (r) r.rotation.set(-1.0, 0, 0.5); // 手を口元に持っていく
+    let count = 0;
+    const id = setInterval(() => {
+      threeModel.rotation.y += Math.sin(count * 0.2) * 0.01; // もじもじ
+      count++; if (count > 30) {
+        clearInterval(id);
+        applyGesture(GESTURES.reset);
+      }
+    }, 50);
   }
 }
 
@@ -297,6 +336,26 @@ function initThreeAgent() {
     if (threeRenderer) {
       const t = threeClock.getElapsedTime();
       if (threeModel) {
+        // リップシンク (口パク)
+        if (isAiTalking) {
+          const mouthOpen = (Math.sin(t * 15) + 1) * 0.5;
+          threeModel.traverse(child => {
+            if (child.morphTargetInfluences && child.morphTargetDictionary) {
+              const index = child.morphTargetDictionary['A'] || 
+                            child.morphTargetDictionary['Ah'] || 
+                            child.morphTargetDictionary['mouthOpen'];
+              if (index !== undefined) child.morphTargetInfluences[index] = mouthOpen;
+            }
+          });
+        } else {
+          // 喋っていない時は口を閉じる
+          threeModel.traverse(child => {
+            if (child.morphTargetInfluences) {
+              const index = child.morphTargetDictionary?.['A'] || child.morphTargetDictionary?.['mouthOpen'];
+              if (index !== undefined) child.morphTargetInfluences[index] = 0;
+            }
+          });
+        }
         threeModel.rotation.y = Math.sin(t * 0.5) * 0.1;
         threeModel.position.y = Math.sin(t * 1.5) * 0.02;
       }
