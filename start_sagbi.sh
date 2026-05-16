@@ -30,20 +30,43 @@ fi
 # 1. Start Signaling Server in background
 echo "[1/3] Starting Signaling Server (Go)..."
 
-# Load environment variables from .env if it exists
+# 環境変数を読み込んでポートを確認
 if [ -f signaling/.env ]; then
     export $(grep -v '^#' signaling/.env | xargs)
 fi
+PORT_CFG=${LISTEN_ADDR:-:8080}
+CHECK_PORT=${PORT_CFG#*:}
+
+# 以前のプロセスが残っていたら掃除する
+if command -v lsof >/dev/null && lsof -Pi :$CHECK_PORT -sTCP:LISTEN -t >/dev/null ; then
+    echo "Port $CHECK_PORT is already in use. Cleaning up old process..."
+    fuser -k $CHECK_PORT/tcp >/dev/null 2>&1 || true
+    sleep 1
+fi
 
 cd signaling
-go run main.go > ../signaling.log 2>&1 &
+# go run ではなく build 済みのバイナリを使うことで2回目以降を爆速にする
+if [ ! -f sagbi-server ] || [ main.go -nt sagbi-server ]; then
+    echo "Compiling signaling server..."
+    go build -o sagbi-server main.go
+fi
+./sagbi-server > ../signaling.log 2>&1 &
 SIGNAL_PID=$!
 
-# サーバーが立ち上がるまで待機
-echo "Waiting for signaling server to listen on :8080..."
-until curl -s http://localhost:8080/healthz > /dev/null; do
+# サーバーが立ち上がるまで待機 (タイムアウト付き)
+echo "Waiting for signaling server to listen on :$CHECK_PORT..."
+RETRIES=0
+while ! curl -s http://localhost:$CHECK_PORT/healthz > /dev/null; do
     sleep 1
     echo -n "."
+    RETRIES=$((RETRIES+1))
+    if [ $RETRIES -gt 30 ]; then
+        echo -e "\n[Error] Signaling server failed to start. Check signaling.log"
+        echo "--- Last 10 lines of signaling.log ---"
+        tail -n 10 ../signaling.log
+        kill $SIGNAL_PID 2>/dev/null || true
+        exit 1
+    fi
 done
 cd ..
 
