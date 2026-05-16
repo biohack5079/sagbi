@@ -258,10 +258,6 @@ sagbi/
 │   ├── sagbi_installer.cpp
 │   ├── CMakeLists.txt
 │   └── sagbi_install.exe
-├── refer/                    # Reference implementations
-│   ├── cnc/                  # Cybernet Call (Node.js WebRTC)
-│   ├── exe/                  # NandGame (C++ Win32)
-│   └── g1m/                  # G1:M (three.js + VRM)
 ├── firebase.json             # Firebase Hosting config
 └── README.md                 # ← You are here
 ```

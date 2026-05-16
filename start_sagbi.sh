@@ -91,6 +91,14 @@ else
     echo "Please open this URL manually: $FINAL_URL"
 fi
 
+echo -e "\n--- Smartphone Access ---"
+if command -v qrencode > /dev/null; then
+    echo "Scan this QR code with your smartphone to join:"
+    qrencode -t ansiutf8 "$FINAL_URL"
+else
+    echo "Tip: Install 'qrencode' to display a QR code here for easy mobile access."
+fi
+
 echo "--- SAGBI AGI is running ---"
 echo "Press Ctrl+C to stop all services."
 

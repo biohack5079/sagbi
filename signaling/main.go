@@ -280,6 +280,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
+			// 同期：メッセージを送信者以外の全クライアントに転送
+			msg.From = c.id
+			broadcastRaw, _ := json.Marshal(msg)
+			hub.broadcast(broadcastRaw, c)
+
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
 			go func(payload ChatPayload, clientID string) { // このgoroutineはRAGとは直接関係ないが、履歴保存ロジック
 				logDir := "history" // RAG用の知識と履歴保存先を分ける
@@ -317,15 +322,12 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					st.WriteString("--- END SESSION ---\n")
 					_ = os.WriteFile(fName, st.Bytes(), 0644)
 
-					// クライアントへ送信
+					// 同期：AIの回答を全員（自分含む）にブロードキャスト
 					resp := WSMessage{Type: "chat_response", From: "SAGBI DANCE FLOOR"}
 					respPayload, _ := json.Marshal(ChatPayload{Text: answer})
 					resp.Payload = respPayload
 					respBytes, _ := json.Marshal(resp)
-					select {
-					case client.send <- respBytes:
-					default:
-					}
+					hub.broadcast(respBytes, nil)
 				}(c, p, &story, filename)
 			}(p, c.id)
 
