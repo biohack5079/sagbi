@@ -530,7 +530,7 @@
   <script>
     // --- Global Logic ---
     window.sagbiWS = null;
-    let myClientId = null;
+    let myClientId = "";
     let lastAiBubble = null; // ストリーミング中のバブルを保持
     const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
     let currentImageBase64 = null;
@@ -590,10 +590,11 @@
             myClientId = JSON.parse(msg.payload).id;
             terminalLog("My Client ID: " + myClientId);
           } else if (isChat) {
-            const isMe = msg.from && msg.from.includes(myClientId);
+            // Client IDが含まれているか、厳密にチェック
+            const isMe = myClientId && msg.from && msg.from.includes(myClientId);
             const isAi = msg.from === "SAGBI AI";
 
-            // 1. 自分が送信したメッセージの「サーバーからのエコー」は無視する（既にローカルで描画済みの為）
+            // 1. 自分が送信したメッセージの「サーバーからのエコー」は無視する（既にローカルでID付きで描画済みの為）
             // 2. AIの返信、または他人のメッセージ（スマホ等）のみを描画する
             if (window.handleAgentResponse && (isAi || !isMe)) {
               window.handleAgentResponse(msg.payload, msg.from);

@@ -199,18 +199,21 @@ func searchRAG(query string) string {
 
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
-	// プロンプトをさらに厳格化し、挨拶などの重複を避ける指示を追加
-	prompt := "System: Your name is SAGBI AI. You MUST follow these rules:\n" +
+	// システムの基本ルールを定義（RAG使用時も必ず含める）
+	systemInstructions := "System: Your name is SAGBI AI. You MUST follow these rules:\n" +
 		"1. Your name SAGBI stands for 'Secure And General Believable Intelligence' ONLY.\n" +
 		"2. The project is based on 'Spirit Bomb Computing' (Spirit AGent Bomb Infrastructure).\n" +
 		"3. Any other name origin (like Agriculture or founders) is FALSE. Do not hallucinate.\n" +
 		"4. Answer directly in natural Japanese.\n" +
-		"Do NOT include user's message in your response. Just answer the request.\nUser: " + payload.Text
+		"Do NOT include user's message in your response. Just answer the request.\n"
 
-	// Inject RAG context if available
-	context := searchRAG(payload.Text) // TODO: Optimize RAG to not read files every time
+	context := searchRAG(payload.Text)
+	var prompt string
 	if context != "" {
-		prompt = "Context:\n" + context + "\n\nInstructions: Based on context, answer user's request. Answer in Japanese.\nUser: " + payload.Text
+		// ルールとRAGコンテキストを結合
+		prompt = fmt.Sprintf("%s\nContext:\n%s\n\nInstructions: Based on the context AND your identity rules, answer user's request.\nUser: %s", systemInstructions, context, payload.Text)
+	} else {
+		prompt = systemInstructions + "User: " + payload.Text
 	}
 
 	ollamaReq := OllamaRequest{
