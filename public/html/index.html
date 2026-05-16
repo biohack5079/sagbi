@@ -555,6 +555,7 @@
       window.sagbiWS.onopen = () => {
         document.getElementById('chat-status-dot').style.background = '#4caf50';
         window.sagbiWS.send(JSON.stringify({ type: 'register', payload: { role: 'web_chat' } }));
+        updateStatus("");
         terminalLog("Connected to Server.");
       };
       window.sagbiWS.onmessage = (evt) => {
