@@ -268,6 +268,12 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = json.Unmarshal(msg.Payload, &p)
 			c.role = p.Role
+			// 自分のIDを通知する
+			regMsg, _ := json.Marshal(WSMessage{
+				Type:    "registered",
+				Payload: json.RawMessage(fmt.Sprintf(`{"id":"%s"}`, c.id)),
+			})
+			c.send <- regMsg
 			log.Printf("[WS] %s registered as %s", c.id, c.role)
 
 		case "log":

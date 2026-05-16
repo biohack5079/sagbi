@@ -530,6 +530,7 @@
   <script>
     // --- Global Logic ---
     window.sagbiWS = null;
+    let myClientId = null;
     const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
     let currentImageBase64 = null;
 
@@ -582,10 +583,20 @@
       window.sagbiWS.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data);
-          if (msg.type === 'chat_response' && window.handleAgentResponse) {
-            window.handleAgentResponse(msg.payload);
+          if (msg.type === 'registered') {
+            myClientId = JSON.parse(msg.payload).id;
+            terminalLog("My Client ID: " + myClientId);
           } else if (msg.type === 'chat_response') {
-            addMessage(msg.payload.text, false);
+            const isAI = (msg.from === "SAGBI DANCE FLOOR");
+            const isMe = (msg.from === "User (" + myClientId + ")");
+            
+            // AIの回答かつエージェント(chat.js)がいる場合
+            if (isAI && window.handleAgentResponse) {
+              window.handleAgentResponse(msg.payload);
+            } else if (!isMe) {
+              // 他人の質問、またはAIの回答をテキストで表示
+              addMessage(msg.payload.text, !isAI, msg.from);
+            }
           }
         } catch (e) { console.error(e); }
       };
@@ -596,7 +607,7 @@
       };
     }
 
-    function addMessage(text, isUser) {
+    function addMessage(text, isUser, fromName) {
       const div = document.createElement('div');
       div.className = `chat-bubble ${isUser ? 'user' : 'bot'}`;
       if (isUser && currentImageBase64) {
@@ -604,6 +615,12 @@
         img.src = currentImageBase64;
         div.appendChild(img);
       }
+      const nameLabel = document.createElement('div');
+      nameLabel.style.fontSize = '10px';
+      nameLabel.style.opacity = '0.6';
+      nameLabel.textContent = fromName || (isUser ? 'You' : 'Sagbi');
+      div.appendChild(nameLabel);
+
       const content = document.createElement('div');
       content.textContent = text;
       div.appendChild(content);
