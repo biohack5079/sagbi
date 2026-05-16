@@ -8,6 +8,7 @@ git commit -m "Set up Firebase Hosting and GitHub Actions"
 # 3. GitHub にプッシュ（これで次回から自動デプロイが走ります）
 git push origin main
 
+
 git reset --hard 
 
 git config user.email "you@example.com"
