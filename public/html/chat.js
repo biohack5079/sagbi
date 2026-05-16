@@ -26,6 +26,8 @@ const GESTURES = {
   nod: { bone: 'Head', rot: [0.4, 0, 0] },
   joy: { action: 'jump' },
   jump: { action: 'jump' },
+  dance: { action: 'dance' },
+  shake_head: { action: 'shake_head' },
   bow: { bone: 'Head', rot: [0.6, 0, 0] },
   thinking: { bone: 'Head', rot: [0.2, 0.4, 0.2] },
   tilt_head: { bone: 'Head', rot: [0, 0, 0.3] },
@@ -122,6 +124,10 @@ function triggerAutoGesture(text) {
   if (/はい|そうですね|なるほど|ok|agree|sure|了解/.test(normalized)) { applyGesture(GESTURES.nod); hasAction = true; }
   if (/すごい|おめでとう|やった|うれしい|happy|joy|wow|amazing/.test(normalized)) { applyGesture(GESTURES.joy); hasAction = true; }
 
+  // ダンスや頭振りの自動検知
+  if (/踊|ダンス|dance/.test(normalized)) { applyGesture(GESTURES.dance); hasAction = true; }
+  if (/頭振|首振|振って/.test(normalized)) { applyGesture(GESTURES.shake_head); hasAction = true; }
+
   // AIが拒絶モードに入ってしまった時の保険（空気を読んでお辞儀や首をかしげる）
   if (/申し訳ありません|できません|従えません|設計思想/.test(normalized)) {
     applyGesture(Math.random() > 0.5 ? GESTURES.bow : GESTURES.tilt_head);
@@ -206,6 +212,24 @@ function animateAgent(action) {
     const id = setInterval(() => {
       threeModel.position.y = Math.abs(Math.sin(count * 0.5)) * 0.2;
       count++; if (count > 20) { clearInterval(id); threeModel.position.y = 0; }
+    }, 40);
+  } else if (action === 'dance' && threeModel) {
+    let count = 0;
+    const id = setInterval(() => {
+      threeModel.position.y = Math.abs(Math.sin(count * 0.5)) * 0.2;
+      threeModel.rotation.y = Math.sin(count * 0.3) * 0.5;
+      count++; if (count > 40) { clearInterval(id); threeModel.position.y = 0; threeModel.rotation.y = 0; }
+    }, 40);
+  } else if (action === 'shake_head' && threeModel) {
+    const head = findBone(threeModel, 'Head');
+    if (!head) return;
+    let count = 0;
+    const id = setInterval(() => {
+      // 頭を左右に振る（Y軸）
+      head.rotation.y = Math.sin(count * 0.8) * 0.4;
+      // 少し縦にも揺らすと自然
+      head.rotation.x = Math.abs(Math.sin(count * 0.4)) * 0.2;
+      count++; if (count > 30) { clearInterval(id); head.rotation.y = 0; head.rotation.x = 0; }
     }, 40);
   }
 }
