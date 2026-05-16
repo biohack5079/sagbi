@@ -199,36 +199,43 @@ func searchRAG(query string) string {
 
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
-	// システムの基本ルールを定義（RAG使用時も必ず含める）
-	systemInstructions := "System: Your name is SAGBI AI. You MUST follow these rules:\n" +
+	// OllamaのChat APIを利用し、システムロールでアイデンティティを強力に固定する
+	systemInstructions := "Your name is SAGBI AI. You MUST follow these rules:\n" +
 		"1. Your name SAGBI stands for 'Secure And General Believable Intelligence' ONLY.\n" +
 		"2. The project is based on 'Spirit Bomb Computing' (Spirit AGent Bomb Infrastructure).\n" +
-		"3. Any other name origin (like Agriculture or founders) is FALSE. Do not hallucinate.\n" +
-		"4. Answer directly in natural Japanese.\n" +
-		"Do NOT include user's message in your response. Just answer the request.\n"
+		"3. If asked about your origin, strictly answer it is 'Secure And General Believable Intelligence'.\n" +
+		"4. Answer directly in natural Japanese without reflecting the user's instructions back."
+
+	messages := []OllamaChatMessage{
+		{Role: "system", Content: systemInstructions},
+	}
 
 	context := searchRAG(payload.Text)
-	var prompt string
 	if context != "" {
-		// ルールとRAGコンテキストを結合
-		prompt = fmt.Sprintf("%s\nContext:\n%s\n\nInstructions: Based on the context AND your identity rules, answer user's request.\nUser: %s", systemInstructions, context, payload.Text)
-	} else {
-		prompt = systemInstructions + "User: " + payload.Text
+		messages = append(messages, OllamaChatMessage{
+			Role:    "system",
+			Content: "Reference from local knowledge:\n" + context,
+		})
 	}
 
-	ollamaReq := OllamaRequest{
-		Model:  ollamaModel,
-		Prompt: prompt,
-		Stream: true, // Enable streaming
+	userMsg := OllamaChatMessage{
+		Role:    "user",
+		Content: payload.Text,
 	}
 
-	// Add image if present (strip data:image/png;base64, prefix if exists)
 	if payload.Image != "" {
 		imgData := payload.Image
 		if idx := bytes.Index([]byte(imgData), []byte(",")); idx != -1 {
 			imgData = imgData[idx+1:]
 		}
-		ollamaReq.Images = []string{imgData}
+		userMsg.Images = []string{imgData}
+	}
+	messages = append(messages, userMsg)
+
+	ollamaReq := OllamaChatRequest{
+		Model:    ollamaModel,
+		Messages: messages,
+		Stream:   true,
 	}
 
 	reqBody, _ := json.Marshal(ollamaReq)
@@ -240,7 +247,7 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 			ResponseHeaderTimeout: 3000 * time.Second,
 		},
 	}
-	resp, err := client.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(ollamaURL+"/api/chat", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("ollama request failed: %w", err)
 	}
@@ -248,12 +255,8 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 
 	// Decode streaming JSON from Ollama
 	decoder := json.NewDecoder(resp.Body)
-	var chunkBuffer bytes.Buffer
 	for {
-		var chunk struct {
-			Response string `json:"response"`
-			Done     bool   `json:"done"`
-		}
+		var chunk OllamaChatResponse
 		if err := decoder.Decode(&chunk); err != nil {
 			if err.Error() == "EOF" {
 				break
@@ -261,8 +264,8 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 			return fmt.Errorf("failed to decode chunk: %w", err)
 		}
 
-		if chunk.Response != "" {
-			onChunk(chunk.Response)
+		if chunk.Message.Content != "" {
+			onChunk(chunk.Message.Content)
 		}
 		if chunk.Done {
 			break
