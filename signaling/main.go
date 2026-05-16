@@ -172,11 +172,12 @@ func searchRAG(query string) string {
 	return context.String()
 }
 
-func queryOllama(payload ChatPayload) (string, error) {
+// queryOllama now accepts a callback to stream tokens back to the client
+func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	prompt := payload.Text
 
 	// Inject RAG context if available
-	context := searchRAG(payload.Text)
+	context := searchRAG(payload.Text) // TODO: Optimize RAG to not read files every time
 	if context != "" {
 		prompt = "Context information:\n" + context + "\n\nUser Question: " + payload.Text
 	}
@@ -184,7 +185,7 @@ func queryOllama(payload ChatPayload) (string, error) {
 	ollamaReq := OllamaRequest{
 		Model:  ollamaModel,
 		Prompt: prompt,
-		Stream: false,
+		Stream: true, // Enable streaming
 	}
 
 	// Add image if present (strip data:image/png;base64, prefix if exists)
@@ -207,16 +208,32 @@ func queryOllama(payload ChatPayload) (string, error) {
 	}
 	resp, err := client.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
-		return "", fmt.Errorf("ollama request failed: %w", err)
+		return fmt.Errorf("ollama request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var result OllamaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
+	// Decode streaming JSON from Ollama
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		var chunk struct {
+			Response string `json:"response"`
+			Done     bool   `json:"done"`
+		}
+		if err := decoder.Decode(&chunk); err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return fmt.Errorf("failed to decode chunk: %w", err)
+		}
 
-	return result.Response, nil
+		if chunk.Response != "" {
+			onChunk(chunk.Response)
+		}
+		if chunk.Done {
+			break
+		}
+	}
+	return nil
 }
 
 // ── WebSocket handler ────────────────────────────────────────
@@ -329,24 +346,36 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				// AIの回答もストーリーに加えるために、queryOllama後に追記する仕組みへ
 				go func(client *Client, p ChatPayload, st *bytes.Buffer, fName string) {
 				queryOnly:
-					answer, err := queryOllama(p)
-					if err != nil {
-						answer = fmt.Sprintf("AI接続エラー: %v (Model: %s)", err, ollamaModel)
+					var fullAnswer bytes.Buffer
+
+					// 送信用のベースメッセージ
+					respMsg := WSMessage{
+						Type: "chat_response",
+						From: "SAGBI DANCE FLOOR",
 					}
 
-					// ストーリーにAIの回答を追記
-					st.WriteString(fmt.Sprintf("[AI:Sagbi] [TYPE:TEXT] %s\n", answer))
+					err := queryOllama(p, func(chunk string) {
+						fullAnswer.WriteString(chunk)
+						// 各トークンを即座にブロードキャスト
+						respMsg.Payload, _ = json.Marshal(ChatPayload{Text: chunk})
+						respBytes, _ := json.Marshal(respMsg)
+						hub.broadcast(respBytes, nil)
+					})
+
+					if err != nil {
+						errMsg := fmt.Sprintf("AI接続エラー: %v", err)
+						fullAnswer.WriteString(errMsg)
+						respMsg.Payload, _ = json.Marshal(ChatPayload{Text: errMsg})
+						respBytes, _ := json.Marshal(respMsg)
+						hub.broadcast(respBytes, nil)
+					}
+
+					// 全回答が完了してからストーリーに保存
+					st.WriteString(fmt.Sprintf("[AI:Sagbi] [TYPE:TEXT] %s\n", fullAnswer.String()))
 					st.WriteString("--- END SESSION ---\n")
 					if historyDir != "" {
 						_ = os.WriteFile(fName, st.Bytes(), 0644)
 					}
-
-					// 同期：AIの回答を全員（自分含む）にブロードキャスト
-					resp := WSMessage{Type: "chat_response", From: "SAGBI DANCE FLOOR"}
-					respPayload, _ := json.Marshal(ChatPayload{Text: answer})
-					resp.Payload = respPayload
-					respBytes, _ := json.Marshal(resp)
-					hub.broadcast(respBytes, nil)
 				}(c, p, &story, filename)
 			}(p, c.id)
 

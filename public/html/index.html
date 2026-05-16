@@ -531,6 +531,7 @@
     // --- Global Logic ---
     window.sagbiWS = null;
     let myClientId = null;
+    let lastAiBubble = null; // ストリーミング中のバブルを保持
     const lang = navigator.language.startsWith('ja') ? 'ja' : 'en';
     let currentImageBase64 = null;
 
@@ -590,12 +591,20 @@
             const isAI = (msg.from === "SAGBI DANCE FLOOR");
             const isMe = (msg.from === "User (" + myClientId + ")");
             
-            // AIの回答かつエージェント(chat.js)がいる場合
-            if (isAI && window.handleAgentResponse) {
-              window.handleAgentResponse(msg.payload);
+            if (isAI) {
+              // ストリーミング表示
+              if (!lastAiBubble || msg.payload.text.length > 50) { // 新規回答か長い回答なら新調
+                 lastAiBubble = addMessage("", false, "Sagbi");
+              }
+              const textNode = lastAiBubble.querySelector('.content-text');
+              textNode.textContent += msg.payload.text;
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+
+              if (window.handleAgentResponse) window.handleAgentResponse(msg.payload);
             } else if (!isMe) {
-              // 他人の質問、またはAIの回答をテキストで表示
-              addMessage(msg.payload.text, !isAI, msg.from);
+              // 他人の質問を表示
+              addMessage(msg.payload.text, true, msg.from);
+              lastAiBubble = null; // AIのターンではないのでリセット
             }
           }
         } catch (e) { console.error(e); }
@@ -610,6 +619,8 @@
     function addMessage(text, isUser, fromName) {
       const div = document.createElement('div');
       div.className = `chat-bubble ${isUser ? 'user' : 'bot'}`;
+      if (!isUser) lastAiBubble = div; // AIのバブルを記憶
+
       if (isUser && currentImageBase64) {
         const img = document.createElement('img');
         img.src = currentImageBase64;
@@ -622,16 +633,19 @@
       div.appendChild(nameLabel);
 
       const content = document.createElement('div');
+      content.className = 'content-text';
       content.textContent = text;
       div.appendChild(content);
       chatMessages.appendChild(div);
       chatMessages.scrollTop = chatMessages.scrollHeight;
+      return div;
     }
 
     function sendMessage() {
       const text = chatInput.value.trim();
       if (!text && !currentImageBase64) return;
       addMessage(text, true);
+      lastAiBubble = null; // 自分の送信時はAIバブルをクリア
       if (window.sagbiWS && window.sagbiWS.readyState === 1) {
         // CRITICAL FIX: Strip Base64 header for AI recognition
         let imgData = null;
