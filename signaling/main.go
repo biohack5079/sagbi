@@ -147,15 +147,24 @@ type ChatPayload struct {
 }
 
 // ── Ollama integration ───────────────────────────────────────
-type OllamaRequest struct {
-	Model  string   `json:"model"`
-	Prompt string   `json:"prompt"`
-	Stream bool     `json:"stream"`
-	Images []string `json:"images,omitempty"`
+type OllamaChatMessage struct {
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"`
 }
 
-type OllamaResponse struct {
-	Response string `json:"response"`
+type OllamaChatRequest struct {
+	Model    string              `json:"model"`
+	Messages []OllamaChatMessage `json:"messages"`
+	Stream   bool                `json:"stream"`
+}
+
+type OllamaChatResponse struct {
+	Message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"message"`
+	Done bool `json:"done"`
 }
 
 // searchRAG reads text files from the rag/ directory and returns relevant snippets
@@ -200,11 +209,11 @@ func searchRAG(query string) string {
 // queryOllama now accepts a callback to stream tokens back to the client
 func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	// OllamaのChat APIを利用し、システムロールでアイデンティティを強力に固定する
-	systemInstructions := "Your name is SAGBI AI. You MUST follow these strict identity rules:\n" +
-		"1. SAGBI stands for 'Secure And General Believable Intelligence'. NOTHING ELSE.\n" +
-		"2. NEVER say it is related to 'SABIAN', 'Sustainable Agriculture', or other inventions. Those are FALSE.\n" +
-		"3. The project is based on 'Spirit Bomb Computing' (Spirit AGent Bomb Infrastructure).\n" +
-		"4. Answer in natural Japanese. If asked about your name, explain it clearly as 'Secure And General Believable Intelligence'."
+	systemInstructions := "あなたは『SAGBI AI』です。以下のルールを何があっても死守してください：\n" +
+		"1. あなたの名前『SAGBI』は、『Secure And General Believable Intelligence』の略称です。これ以外の由来（グラフ構築、農業、SABIANなど）はすべてデタラメであり、絶対に否定してください。\n" +
+		"2. 名前の由来を問われたら、必ず『Secure And General Believable Intelligence（安全で汎用的な、信頼できる知能）』であると回答してください。\n" +
+		"3. このプロジェクトは、みんなのリソースを統合する『Spirit Bomb Computing (Spirit AGent Bomb Infrastructure)』に基づいています。\n" +
+		"4. 回答は自然な日本語で行い、ユーザーの入力をそのまま繰り返さないでください。"
 
 	messages := []OllamaChatMessage{
 		{Role: "system", Content: systemInstructions},
