@@ -32,6 +32,8 @@
 // ── Configuration ────────────────────────────────────────────
 static const wchar_t* OLLAMA_DOWNLOAD_URL =
     L"https://ollama.com/download/OllamaSetup.exe";
+static const wchar_t* SIGNALING_SERVER_URL = 
+    L"https://github.com/biohack5079/sagbi/releases/download/v1.0.0/sagbi-server-win.exe";
 static const wchar_t* DEFAULT_MODEL = L"gemma3:4b-it-q4_K_M";
 static const wchar_t* SAGBI_URL     = L"https://sagbuntu.web.app/";
 static const wchar_t* WINDOW_TITLE  = L"SAGBI AGI Installer";
@@ -99,13 +101,26 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
         envFile.close();
     }
 
+    // 起動用バッチファイル (run_sagbi.bat) の作成
+    // start_sagbi.sh の Windows版としての役割を担います
+    std::wofstream batFile(L"run_sagbi.bat");
+    batFile << L"@echo off" << std::endl;
+    batFile << L"echo Starting SAGBI AGI Services..." << std::endl;
+    batFile << L"start /b ollama serve" << std::endl;
+    batFile << L"timeout /t 5" << std::endl;
+    batFile << L"start /b sagbi-server.exe" << std::endl;
+    batFile << L"timeout /t 2" << std::endl;
+    batFile << L"start " << SAGBI_URL << std::endl;
+    batFile.close();
+
     // Step 1: Download Ollama installer
     setStatus(L"Ollama をダウンロード中...");
-    setProgress(L"[1/3] Downloading OllamaSetup.exe");
+    setProgress(L"[1/4] Downloading OllamaSetup.exe");
 
     wchar_t tempPath[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPath);
     std::wstring installerPath = std::wstring(tempPath) + L"OllamaSetup.exe";
+    std::wstring serverPath = L"sagbi-server.exe";
 
     if (!downloadFile(OLLAMA_DOWNLOAD_URL, installerPath.c_str())) {
         setStatus(L"❌ Ollama のダウンロードに失敗しました");
@@ -114,9 +129,16 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
         return 1;
     }
 
-    // Step 2: Run Ollama installer (silent)
+    // Step 2: Download Signaling Server
+    setStatus(L"シグナリングサーバーをダウンロード中...");
+    setProgress(L"[2/4] Downloading Go signaling server");
+    if (!downloadFile(SIGNALING_SERVER_URL, serverPath.c_str())) {
+        setStatus(L"⚠ サーバーのダウンロードに失敗しました。後で手動で配置してください。");
+    }
+
+    // Step 3: Run Ollama installer (silent)
     setStatus(L"Ollama をインストール中...");
-    setProgress(L"[2/3] Installing Ollama");
+    setProgress(L"[3/4] Installing Ollama");
 
     std::wstring installCmd = L"\"" + installerPath + L"\" /SILENT /NORESTART";
     if (!runCommand(installCmd.c_str())) {
@@ -129,11 +151,11 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
     // Give Ollama service time to start
     Sleep(3000);
 
-    // Step 3: Pull default model
+    // Step 4: Pull default model
     setStatus(L"デフォルトモデルを取得中...");
     std::wstring pullCmd = L"ollama pull ";
     pullCmd += DEFAULT_MODEL;
-    setProgress((std::wstring(L"[3/3] ollama pull ") + DEFAULT_MODEL).c_str());
+    setProgress((std::wstring(L"[4/4] ollama pull ") + DEFAULT_MODEL).c_str());
 
     if (!runCommand(pullCmd.c_str())) {
         setStatus(L"⚠ モデル取得に失敗 — 手動で実行してください");
@@ -152,6 +174,7 @@ DWORD WINAPI installWorker(LPVOID lpParam) {
     setStatus(L"✅ インストール完了！");
     setProgress(L"SAGBI AGI を開くにはボタンをクリック");
     installComplete = true;
+    SetWindowTextW(hOpenHpBtn, L"🚀 SAGBI を起動");
     EnableWindow(hOpenHpBtn, TRUE);
     EnableWindow(hInstallBtn, TRUE);
     return 0;
@@ -256,7 +279,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             CreateThread(NULL, 0, installWorker, hwnd, 0, NULL);
             break;
         case IDC_OPEN_HP_BTN:
-            ShellExecuteW(NULL, L"open", SAGBI_URL, NULL, NULL, SW_SHOWNORMAL);
+            // 単にURLを開くのではなく、生成したバッチファイルを叩いてサーバーごと起動する
+            ShellExecuteW(NULL, L"open", L"run_sagbi.bat", NULL, NULL, SW_SHOWNORMAL);
             break;
         }
         break;

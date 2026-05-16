@@ -7,3 +7,9 @@ firebase deploy
 
 
 ./start_sagbi.sh
+
+
+
+x86_64-w64-mingw32-g++ -o /home/me/Documents/d/sagbi/installer/sagbi_install.exe /home/me/Documents/d/sagbi/installer/sagbi_installer.cpp \
+    -lshell32 -lurlmon -luser32 -lole32 -mwindows -static
+
