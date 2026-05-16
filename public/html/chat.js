@@ -236,6 +236,22 @@ function initThreeAgent() {
 
   new GLTFLoader().load(GLB_MODEL_PATH, (gltf) => {
     threeModel = gltf.scene;
+
+    // --- モデルのサイズと位置の自動調整 ---
+    const box = new THREE.Box3().setFromObject(threeModel);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    // 高さが1.8（人間の標準的な高さ）になるようにスケールを調整
+    const scale = 1.8 / size.y;
+    threeModel.scale.set(scale, scale, scale);
+
+    // モデルの足元を原点 (0,0,0) に合わせる
+    threeModel.position.x = -center.x * scale;
+    threeModel.position.y = -box.min.y * scale; 
+    threeModel.position.z = -center.z * scale;
+    // ------------------------------------
+
     threeScene.add(threeModel);
     applyGesture(GESTURES.reset); // ロード直後に自然なポーズを適用
     console.log('[SAGBI] 3D Model Loaded.');
