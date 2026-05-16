@@ -19,6 +19,13 @@ if ! ollama list | grep -q "$MODEL"; then
     ollama pull "$MODEL"
 fi
 
+# Check if Ollama service is actually responding
+if ! curl -s http://localhost:11434/api/tags > /dev/null; then
+    echo "Ollama service is not running. Starting it in background..."
+    ollama serve > /dev/null 2>&1 &
+    sleep 5 # Wait for initialization
+fi
+
 
 # 1. Start Signaling Server in background
 echo "[1/3] Starting Signaling Server (Go)..."
@@ -64,9 +71,9 @@ FINAL_URL="https://sagbuntu.web.app/?s=$SIGNAL_WSS_URL&app=1"
 echo "Target URL: $FINAL_URL"
 
 if command -v xdg-open > /dev/null; then
-    xdg-open "$FINAL_URL"
+    xdg-open "$FINAL_URL" > /dev/null 2>&1
 elif command -v open > /dev/null; then
-    open "$FINAL_URL"
+    open "$FINAL_URL" > /dev/null 2>&1
 else
     echo "Please open this URL manually: $FINAL_URL"
 fi
