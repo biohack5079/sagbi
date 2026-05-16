@@ -9,6 +9,9 @@ const agentCanvas = document.getElementById('agent-canvas');
 
 let threeScene, threeCamera, threeRenderer, threeClock, threeModel;
 
+// ストリーミング中のテキストを保持するバッファ
+const responseBuffers = new Map();
+
 // --- Gestures (G1:M compatible) ---
 const GESTURES = {
   wave: { bone: 'RightUpperArm', rot: [-1.2, 0, 1.5] },
@@ -19,12 +22,38 @@ const GESTURES = {
 
 // --- Agent Response Handler (Exposed to index.html) ---
 window.handleAgentResponse = (payload) => {
-  if (!payload) return;
-  
-  // 1. Add text to UI (via index.html function)
-  if (window.addMessage) {
-    const text = parseGestures(payload.text || '...');
-    window.addMessage(text, false);
+  if (!payload || !payload.text) return;
+  const msgId = payload.id || 'ai-fallback';
+
+  // 1. 既存のメッセージ要素があるか確認（IDで紐付け）
+  let bubble = document.getElementById(msgId);
+
+  if (!responseBuffers.has(msgId)) {
+    responseBuffers.set(msgId, "");
+  }
+
+  // バッファに新しく届いた断片を追加
+  responseBuffers.set(msgId, responseBuffers.get(msgId) + payload.text);
+  const fullText = responseBuffers.get(msgId);
+
+  if (!bubble) {
+    // 新しいメッセージ：最初の1回だけ addMessage を呼ぶ
+    if (window.addMessage) {
+      const text = parseGestures(payload.text || '...');
+      const el = window.addMessage(text, false);
+      // index.html側で作成された要素にIDを付与して、次回から探せるようにする
+      if (el) el.id = msgId;
+      else {
+        // addMessageが要素を返さない場合のフォールバック
+        const lastMsg = document.querySelector('.message:last-child');
+        if (lastMsg) lastMsg.id = msgId;
+      }
+    }
+  } else {
+    // 既存のメッセージ：テキストのみを更新
+    // parseGesturesは全文に対して実行して、タグを処理しつつテキストを表示
+    const contentSpan = bubble.querySelector('.text') || bubble;
+    contentSpan.textContent = parseGestures(fullText);
   }
 
   // 2. Animate Agent
