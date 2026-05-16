@@ -189,7 +189,7 @@ func queryOllama(payload ChatPayload) (string, error) {
 
 	reqBody, _ := json.Marshal(ollamaReq)
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	client := &http.Client{Timeout: 3000 * time.Second}
 	resp, err := client.Post(ollamaURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return "", fmt.Errorf("ollama request failed: %w", err)
@@ -354,11 +354,12 @@ func main() {
 	log.Printf("   Ollama endpoint: %s (model: %s)", ollamaURL, ollamaModel)
 
 	srv := &http.Server{
-		Addr:         listenAddr,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 120 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:    listenAddr,
+		Handler: mux,
+		// WebSocket接続を維持するため、サーバー全体のタイムアウトは設定しない
+		ReadTimeout:  0,
+		WriteTimeout: 0,
+		IdleTimeout:  0,
 	}
 
 	if err := srv.ListenAndServe(); err != nil {

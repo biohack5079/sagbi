@@ -23,7 +23,7 @@ fi
 if ! curl -s http://localhost:11434/api/tags > /dev/null; then
     echo "Ollama service is not running. Starting it in background..."
     ollama serve > /dev/null 2>&1 &
-    sleep 5 # Wait for initialization
+    sleep 10 # 起動時間を長めに確保
 fi
 
 
