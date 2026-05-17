@@ -8,6 +8,12 @@ firebase deploy
 
 ./start_sagbi.sh
 
+git reset --hard 11d118f
+git clean -fdx
+git add . && \
+git commit -m "feat: change $(date +'%Y-%m-%d %H:%M:%S')" && \
+git push origin main --force
+
 
 
 x86_64-w64-mingw32-g++ -o /home/me/Documents/d/sagbi/installer/sagbi_install.exe /home/me/Documents/d/sagbi/installer/sagbi_installer.cpp \
